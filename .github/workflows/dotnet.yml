@@ -28,6 +28,6 @@ jobs:
         # Artifact name
         name: AnitomySharp-artifact
         # A file, directory or wildcard pattern that describes what to upload
-        path: /home/runner/work/jellyfin-plugin-bangumi/jellyfin-plugin-bangumi/jellyfin-plugin-bangumi/bin/Debug/net6.0/
+        path: /home/runner/work/jellyfin-plugin-bangumi/jellyfin-plugin-bangumi/Jellyfin.Plugin.Bangumi/bin/Debug/net6.0/
         if-no-files-found: error
         retention-days: 30
