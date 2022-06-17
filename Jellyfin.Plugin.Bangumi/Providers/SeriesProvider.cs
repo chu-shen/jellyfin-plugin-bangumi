@@ -85,6 +85,7 @@ namespace Jellyfin.Plugin.Bangumi.Providers
                     resultId = searchResult.Id;
                 }
             }
+            _log.LogInformation("best match in bgm.tv: {Name}", resultId);
             return resultId;
         }
 
