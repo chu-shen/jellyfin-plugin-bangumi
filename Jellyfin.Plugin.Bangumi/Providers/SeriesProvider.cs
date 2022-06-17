@@ -8,6 +8,7 @@ using MediaBrowser.Controller.Providers;
 using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.Providers;
 using Microsoft.Extensions.Logging;
+using Jellyfin.Plugin.Bangumi.Model;
 
 namespace Jellyfin.Plugin.Bangumi.Providers
 {
@@ -72,11 +73,11 @@ namespace Jellyfin.Plugin.Bangumi.Providers
             return result;
         }
 
-        private String SortResult(List<SearchResult<Subject>> searchResults, String name){
+        private String SortResult(List<Subject> searchResults, String name){
             SimilarityTool similarityTool = new SimilarityTool();
             var degree = -1;
             string resultId;
-            foreach (SearchResult<Subject> searchResult in searchResults)
+            foreach (Subject searchResult in searchResults)
             {
                 var temp = similarityTool.CompareStrings(name,searchResult.OriginalName);
                 if (degree < temp){
