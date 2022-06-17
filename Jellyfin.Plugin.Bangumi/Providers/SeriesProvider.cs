@@ -38,7 +38,7 @@ namespace Jellyfin.Plugin.Bangumi.Providers
                 _log.LogInformation("Searching {Name} in bgm.tv", info.Name);
                 var searchResult = await _api.SearchSubject(info.Name, token);
                 if (searchResult.Count > 0)
-                    subjectId = $"{searchResult[0].Id}";
+                    subjectId = SortResult(searchResult, info.Name);
             }
 
             if (string.IsNullOrEmpty(subjectId))
@@ -70,6 +70,21 @@ namespace Jellyfin.Plugin.Bangumi.Providers
             (await _api.GetSubjectCharacters(subjectId, token)).ForEach(result.AddPerson);
 
             return result;
+        }
+
+        private String SortResult(List<SearchResult<Subject>> searchResults, String name){
+            SimilarityTool similarityTool = new SimilarityTool();
+            var degree = -1;
+            string resultId;
+            foreach (SearchResult<Subject> searchResult in searchResults)
+            {
+                var temp = similarityTool.CompareStrings(name,searchResult.OriginalName);
+                if (degree < temp){
+                    degree = temp;
+                    resultId = searchResult.Id;
+                }
+            }
+            return resultId;
         }
 
         public async Task<IEnumerable<RemoteSearchResult>> GetSearchResults(SeriesInfo searchInfo,
