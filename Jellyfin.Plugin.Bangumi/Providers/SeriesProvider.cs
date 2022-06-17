@@ -73,7 +73,7 @@ namespace Jellyfin.Plugin.Bangumi.Providers
             return result;
         }
 
-        private Int SortResult(List<Subject> searchResults, String name){
+        private int SortResult(List<Subject> searchResults, String name){
             SimilarityTool similarityTool = new SimilarityTool();
             var degree = -1.0;
             var resultId = 1;
