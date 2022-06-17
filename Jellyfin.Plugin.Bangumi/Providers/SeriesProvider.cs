@@ -75,7 +75,7 @@ namespace Jellyfin.Plugin.Bangumi.Providers
 
         private String SortResult(List<Subject> searchResults, String name){
             SimilarityTool similarityTool = new SimilarityTool();
-            var degree;
+            var degree = -1.0;
             var resultId;
             foreach (Subject searchResult in searchResults)
             {
