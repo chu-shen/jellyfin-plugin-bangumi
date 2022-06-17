@@ -73,7 +73,7 @@ namespace Jellyfin.Plugin.Bangumi.Providers
             return result;
         }
 
-        private int SortResult(List<Subject> searchResults, String name){
+        private String SortResult(List<Subject> searchResults, String name){
             SimilarityTool similarityTool = new SimilarityTool();
             var degree = -1.0;
             var resultId = 1;
@@ -86,7 +86,7 @@ namespace Jellyfin.Plugin.Bangumi.Providers
                 }
             }
             _log.LogInformation("best match in bgm.tv: {Name}", resultId);
-            return resultId;
+            return $"{resultId}";
         }
 
         public async Task<IEnumerable<RemoteSearchResult>> GetSearchResults(SeriesInfo searchInfo,
