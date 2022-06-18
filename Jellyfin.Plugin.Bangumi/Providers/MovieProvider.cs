@@ -8,6 +8,7 @@ using MediaBrowser.Controller.Providers;
 using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.Providers;
 using Microsoft.Extensions.Logging;
+using Jellyfin.Plugin.Bangumi.Model;
 
 namespace Jellyfin.Plugin.Bangumi.Providers
 {
@@ -40,7 +41,7 @@ namespace Jellyfin.Plugin.Bangumi.Providers
                 _log.LogInformation("Searching {Name} in bgm.tv", info.Name);
                 var searchResult = await _api.SearchSubject(info.Name, token);
                 if (searchResult.Count > 0)
-                    subjectId = $"{searchResult[0].Id}";
+                    subjectId = SortResult(searchResult, info.Name);
             }
 
             if (string.IsNullOrEmpty(subjectId))
@@ -70,6 +71,22 @@ namespace Jellyfin.Plugin.Bangumi.Providers
             (await _api.GetSubjectCharacters(subjectId, token)).ForEach(result.AddPerson);
 
             return result;
+        }
+        
+        private String SortResult(List<Subject> searchResults, String name){
+            SimilarityTool similarityTool = new SimilarityTool();
+            var degree = -1.0;
+            var resultId = 1;
+            foreach (Subject searchResult in searchResults)
+            {
+                var temp = similarityTool.CompareStrings(name,searchResult.OriginalName);
+                if (degree < temp){
+                    degree = temp;
+                    resultId = searchResult.Id;
+                }
+            }
+            _log.LogInformation("best match in bgm.tv: {Name}", resultId);
+            return $"{resultId}";
         }
 
         public async Task<IEnumerable<RemoteSearchResult>> GetSearchResults(MovieInfo searchInfo,
