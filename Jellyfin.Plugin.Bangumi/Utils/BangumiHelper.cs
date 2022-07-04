@@ -1,5 +1,6 @@
 using System;
-using Microsoft.Extensions.Logging;
+using System.Collections.Generic;
+using System.IO;
 
 namespace Jellyfin.Plugin.Bangumi.Utils
 {
