@@ -63,8 +63,7 @@ public class Movie
         var result = await _provider.GetMetadata(new MovieInfo
         {
             Name = "[AI-Raws][Jigokushoujo][S1-S3][DVDRip]",
-            Path = FakePath.Create("[AI-Raws][Jigokushoujo][S1-S3][DVDRip]"),
-            ProviderIds = new Dictionary<string, string> { { Constants.ProviderName, "1260" } }
+            Path = FakePath.Create("[AI-Raws][Jigokushoujo][S1-S3][DVDRip]")
         }, _token);  
         _plugin.Configuration.AlwaysUseAnitomySharp = false;
         Assert.AreEqual("地狱少女", result.Item.Name, "should return correct series name");
