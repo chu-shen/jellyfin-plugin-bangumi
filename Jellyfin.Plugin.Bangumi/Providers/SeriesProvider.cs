@@ -8,6 +8,7 @@ using MediaBrowser.Controller.Providers;
 using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.Providers;
 using Microsoft.Extensions.Logging;
+using Jellyfin.Plugin.Bangumi.Utils;
 
 namespace Jellyfin.Plugin.Bangumi.Providers;
 
