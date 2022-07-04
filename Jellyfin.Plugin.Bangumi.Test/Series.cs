@@ -66,7 +66,7 @@ public class Series
     public async Task GetNameByAnitomySharp()
     {
         _plugin.Configuration.AlwaysUseAnitomySharp = true;
-        var searchResults = await _provider.GetMetadata(new SeriesInfo
+        var result = await _provider.GetMetadata(new SeriesInfo
         {
             Name = "[Airota&LoliHouse] Toaru Kagaku no Railgun T [BDRip 1080p HEVC-10bit FLAC]",
             Path = FakePath.Create("[Airota&LoliHouse] Toaru Kagaku no Railgun T [BDRip 1080p HEVC-10bit FLAC]"),
