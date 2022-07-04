@@ -5,6 +5,9 @@ namespace Jellyfin.Plugin.Bangumi.Utils
 {
     public class NameHelper
     {
+        public NameHelper()
+        {
+        }
 
         public static String NameHelper(String searchName, Plugin plugin){
 
