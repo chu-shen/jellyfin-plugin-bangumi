@@ -13,6 +13,7 @@ public class PluginConfiguration : BasePluginConfiguration
     public PluginConfiguration()
     {
         TranslationPreference = TranslationPreferenceType.Chinese;
+        AlwaysUseAnitomySharp = false;
     }
 
     public TranslationPreferenceType TranslationPreference { get; set; }
