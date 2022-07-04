@@ -1,7 +1,4 @@
 using System;
-using System.Collections.Generic;
-using System.IO;
-using Jellyfin.Plugin.Bangumi.Utils;
 
 namespace Jellyfin.Plugin.Bangumi.Utils
 {
@@ -10,7 +7,7 @@ namespace Jellyfin.Plugin.Bangumi.Utils
         public static String NameHelper(String searchName, Plugin plugin){
 
             if (plugin.Configuration.AlwaysUseAnitomySharp){
-                searchName = Anitomy.AnitomyHelper.ExtractAnimeTitle(searchName);
+                searchName = AnitomyHelper.ExtractAnimeTitle(searchName);
             }
 
             return searchName;
