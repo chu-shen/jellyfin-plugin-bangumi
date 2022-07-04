@@ -18,4 +18,6 @@ public class PluginConfiguration : BasePluginConfiguration
     public TranslationPreferenceType TranslationPreference { get; set; }
 
     public bool AlwaysReplaceEpisodeNumber { get; set; }
+
+    public bool AlwaysUseAnitomySharp { get; set; }
 }

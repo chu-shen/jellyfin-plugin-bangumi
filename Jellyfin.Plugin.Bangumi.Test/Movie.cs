@@ -14,6 +14,7 @@ namespace Jellyfin.Plugin.Bangumi.Test;
 public class Movie
 {
     private readonly MovieProvider _provider = ServiceLocator.GetService<MovieProvider>();
+    private readonly Bangumi.Plugin _plugin = ServiceLocator.GetService<Bangumi.Plugin>();
 
     private readonly CancellationToken _token = new();
 
@@ -52,6 +53,18 @@ public class Movie
             Name = "STEINS;GATE 負荷領域のデジャヴ"
         }, _token);
         Assert.IsTrue(searchResults.Any(x => x.ProviderIds[Constants.ProviderName].Equals("23119")), "should have correct search result");
+    }
+
+    [TestMethod]
+    public async Task GetNameByAnitomySharp()
+    {
+        _plugin.Configuration.AlwaysUseAnitomySharp = true;
+        var searchResults = await _provider.GetSearchResults(new MovieInfo
+        {
+            Name = "[AI-Raws][Jigokushoujo][S1-S3][DVDRip]",
+            Path = FakePath.Create("[AI-Raws][Jigokushoujo][S1-S3][DVDRip]")
+        }, _token);
+        Assert.IsTrue(searchResults.Any(x => x.ProviderIds[Constants.ProviderName].Equals("1260")), "should have correct search result");
     }
 
     [TestMethod]
