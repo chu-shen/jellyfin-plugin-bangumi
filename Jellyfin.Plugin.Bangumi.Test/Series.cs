@@ -69,9 +69,10 @@ public class Series
         var searchResults = await _provider.GetMetadata(new SeriesInfo
         {
             Name = "[Airota&LoliHouse] Toaru Kagaku no Railgun T [BDRip 1080p HEVC-10bit FLAC]",
-            Path = FakePath.Create("[Airota&LoliHouse] Toaru Kagaku no Railgun T [BDRip 1080p HEVC-10bit FLAC]")
+            Path = FakePath.Create("[Airota&LoliHouse] Toaru Kagaku no Railgun T [BDRip 1080p HEVC-10bit FLAC]"),
+            ProviderIds = new Dictionary<string, string> { { Constants.ProviderName, "262940" } }
         }, _token);
-        Assert.IsTrue(searchResults.Any(x => x.ProviderIds[Constants.ProviderName].Equals("262940")), "should have correct search result");        
+        Assert.AreEqual("Toaru Kagaku no Railgun T", result.Item.Name, "should return correct series name");        
         _plugin.Configuration.AlwaysUseAnitomySharp = false;
     }
 

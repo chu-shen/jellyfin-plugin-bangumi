@@ -63,9 +63,10 @@ public class Movie
         var searchResults = await _provider.GetMetadata(new MovieInfo
         {
             Name = "[AI-Raws][Jigokushoujo][S1-S3][DVDRip]",
-            Path = FakePath.Create("[AI-Raws][Jigokushoujo][S1-S3][DVDRip]")
+            Path = FakePath.Create("[AI-Raws][Jigokushoujo][S1-S3][DVDRip]"),
+            ProviderIds = new Dictionary<string, string> { { Constants.ProviderName, "1260" } }
         }, _token);
-        Assert.IsTrue(searchResults.Any(x => x.ProviderIds[Constants.ProviderName].Equals("1260")), "should have correct search result");
+        Assert.AreEqual("Jigokushoujo", result.Item.Name, "should return correct series name");  
         _plugin.Configuration.AlwaysUseAnitomySharp = false;
     }
 
