@@ -35,7 +35,7 @@ public class SeriesProvider : IRemoteMetadataProvider<Series, SeriesInfo>, IHasO
         var subjectId = info.ProviderIds.GetOrDefault(Constants.ProviderName);
         if (string.IsNullOrEmpty(subjectId))
         {
-            var searchName = NameHelper.NameHelper(info.Name, _plugin);
+            var searchName = BangumiHelper.NameHelper(info.Name, _plugin);
             _log.LogInformation("Searching {Name} in bgm.tv", searchName);
             var searchResult = await _api.SearchSubject(searchName, token);
             if (searchResult.Count > 0)
@@ -45,7 +45,7 @@ public class SeriesProvider : IRemoteMetadataProvider<Series, SeriesInfo>, IHasO
         // try search OriginalTitle
         if (string.IsNullOrEmpty(subjectId) && info.OriginalTitle != null && !String.Equals(info.OriginalTitle, info.Name, StringComparison.Ordinal))
         {
-            var searchName = NameHelper.NameHelper(info.OriginalTitle, _plugin);
+            var searchName = BangumiHelper.NameHelper(info.OriginalTitle, _plugin);
             _log.LogInformation("Searching {Name} in bgm.tv", searchName);
             var searchResult = await _api.SearchSubject(searchName, token);
             if (searchResult.Count > 0)

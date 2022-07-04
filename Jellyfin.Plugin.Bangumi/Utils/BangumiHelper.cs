@@ -3,12 +3,8 @@ using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.Bangumi.Utils
 {
-    public class NameHelper
+    public class BangumiHelper
     {
-        public NameHelper()
-        {
-        }
-
         public static String NameHelper(String searchName, Plugin plugin){
 
             if (plugin.Configuration.AlwaysUseAnitomySharp){
