@@ -72,7 +72,7 @@ public class Series
             Path = FakePath.Create("[Airota&LoliHouse] Toaru Kagaku no Railgun T [BDRip 1080p HEVC-10bit FLAC]"),
             ProviderIds = new Dictionary<string, string> { { Constants.ProviderName, "262940" } }
         }, _token);
-        Assert.AreEqual("Toaru Kagaku no Railgun T", result.Item.Name, "should return correct series name");        
+        Assert.AreEqual("とある科学の超電磁砲T", result.Item.Name, "should return correct series name");        
         _plugin.Configuration.AlwaysUseAnitomySharp = false;
     }
 
