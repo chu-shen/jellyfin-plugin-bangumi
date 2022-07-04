@@ -62,11 +62,11 @@ public class Movie
         _plugin.Configuration.AlwaysUseAnitomySharp = true;
         var result = await _provider.GetMetadata(new MovieInfo
         {
-            Name = "[AI-Raws][Jigokushoujo][S1-S3][DVDRip]",
-            Path = FakePath.Create("[AI-Raws][Jigokushoujo][S1-S3][DVDRip]")
+            Name = "[Zagzad] Memories (BDRip 1764x972 1800x976 1788x932 HEVC-10bit THD)",
+            Path = FakePath.Create("[Zagzad] Memories (BDRip 1764x972 1800x976 1788x932 HEVC-10bit THD)")
         }, _token);  
         _plugin.Configuration.AlwaysUseAnitomySharp = false;
-        Assert.AreEqual("地狱少女", result.Item.Name, "should return correct series name");
+        Assert.AreEqual("回忆三部曲", result.Item.Name, "should return correct series name");
     }
 
     [TestMethod]
