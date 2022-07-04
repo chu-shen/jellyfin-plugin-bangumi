@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using Jellyfin.Plugin.Bangumi.Utils;
 
 namespace Jellyfin.Plugin.Bangumi.Utils
 {
