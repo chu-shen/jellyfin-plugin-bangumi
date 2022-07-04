@@ -65,9 +65,9 @@ public class Movie
             Name = "[AI-Raws][Jigokushoujo][S1-S3][DVDRip]",
             Path = FakePath.Create("[AI-Raws][Jigokushoujo][S1-S3][DVDRip]"),
             ProviderIds = new Dictionary<string, string> { { Constants.ProviderName, "1260" } }
-        }, _token);
-        Assert.AreEqual("地狱少女", result.Item.Name, "should return correct series name");  
+        }, _token);  
         _plugin.Configuration.AlwaysUseAnitomySharp = false;
+        Assert.AreEqual("地狱少女", result.Item.Name, "should return correct series name");
     }
 
     [TestMethod]
