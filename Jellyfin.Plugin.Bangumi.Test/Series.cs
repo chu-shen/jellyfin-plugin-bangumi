@@ -71,7 +71,8 @@ public class Series
             Name = "[Airota&LoliHouse] Toaru Kagaku no Railgun T [BDRip 1080p HEVC-10bit FLAC]",
             Path = FakePath.Create("[Airota&LoliHouse] Toaru Kagaku no Railgun T [BDRip 1080p HEVC-10bit FLAC]")
         }, _token);
-        Assert.IsTrue(searchResults.Any(x => x.ProviderIds[Constants.ProviderName].Equals("262940")), "should have correct search result");
+        Assert.IsTrue(searchResults.Any(x => x.ProviderIds[Constants.ProviderName].Equals("262940")), "should have correct search result");        
+        _plugin.Configuration.AlwaysUseAnitomySharp = false;
     }
 
     [TestMethod]

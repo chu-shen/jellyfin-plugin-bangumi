@@ -66,6 +66,7 @@ public class Movie
             Path = FakePath.Create("[AI-Raws][Jigokushoujo][S1-S3][DVDRip]")
         }, _token);
         Assert.IsTrue(searchResults.Any(x => x.ProviderIds[Constants.ProviderName].Equals("1260")), "should have correct search result");
+        _plugin.Configuration.AlwaysUseAnitomySharp = false;
     }
 
     [TestMethod]
