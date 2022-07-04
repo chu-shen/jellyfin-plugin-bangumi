@@ -60,7 +60,7 @@ public class Movie
     public async Task GetNameByAnitomySharp()
     {
         _plugin.Configuration.AlwaysUseAnitomySharp = true;
-        var searchResults = await _provider.GetSearchResults(new MovieInfo
+        var searchResults = await _provider.GetMetadata(new MovieInfo
         {
             Name = "[AI-Raws][Jigokushoujo][S1-S3][DVDRip]",
             Path = FakePath.Create("[AI-Raws][Jigokushoujo][S1-S3][DVDRip]")
