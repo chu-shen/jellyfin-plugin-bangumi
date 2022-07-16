@@ -14,7 +14,9 @@ namespace Jellyfin.Plugin.Bangumi.Test;
 [TestClass]
 public class Series
 {
+    private readonly BangumiApi _api = ServiceLocator.GetService<BangumiApi>();
     private readonly SubjectImageProvider _imageProvider = ServiceLocator.GetService<SubjectImageProvider>();
+    private readonly Bangumi.Plugin _plugin = ServiceLocator.GetService<Bangumi.Plugin>();
     private readonly SeriesProvider _provider = ServiceLocator.GetService<SeriesProvider>();
 
     private readonly CancellationToken _token = new();
@@ -61,6 +63,19 @@ public class Series
     }
 
     [TestMethod]
+    public async Task GetNameByAnitomySharp()
+    {
+        _plugin.Configuration.AlwaysGetTitleByAnitomySharp = true;
+        var result = await _provider.GetMetadata(new SeriesInfo
+        {
+            Name = "[Airota&LoliHouse] Toaru Kagaku no Railgun T [BDRip 1080p HEVC-10bit FLAC]",
+            Path = FakePath.Create("[Airota&LoliHouse] Toaru Kagaku no Railgun T [BDRip 1080p HEVC-10bit FLAC]")
+        }, _token);
+        _plugin.Configuration.AlwaysGetTitleByAnitomySharp = false;
+        Assert.AreEqual("とある科学の超電磁砲T", result.Item.Name, "should return correct series name");
+    }
+
+    [TestMethod]
     public async Task SearchById()
     {
         var searchResults = await _provider.GetSearchResults(new SeriesInfo
@@ -69,6 +84,16 @@ public class Series
             ProviderIds = new Dictionary<string, string> { { Constants.ProviderName, "69496" } }
         }, _token);
         Assert.IsTrue(searchResults.Any(x => x.ProviderIds[Constants.ProviderName].Equals("69496")), "should have correct search result");
+    }
+
+    [TestMethod]
+    public async Task SortSearchResult()
+    {
+        var searchResults = await _api.SearchSubject("マジンガーZ", _token);
+        Assert.AreEqual(searchResults.First().Id, 10390, "should return most similar item as first");
+
+        searchResults = await _api.SearchSubject("ガンダムビルドファイターズトライ", _token);
+        Assert.AreEqual(searchResults.First().Id, 105875, "should return most similar item as first");
     }
 
     [TestMethod]

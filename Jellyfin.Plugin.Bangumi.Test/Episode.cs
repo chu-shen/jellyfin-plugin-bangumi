@@ -48,6 +48,70 @@ public class Episode
         Assert.IsNotNull(episodeData, "episode data should not be null");
         Assert.IsNotNull(episodeData.Item, "episode data should not be null");
         Assert.AreEqual("WHITE ALBUM", episodeData.Item.Name, "should return the right episode title");
+
+        episodeData = await _provider.GetMetadata(new EpisodeInfo
+        {
+            IndexNumber = 0,
+            Path = FakePath.CreateFile("[202204]辉夜大小姐想让我告白-超级浪漫-/[202204]辉夜大小姐想让我告白-超级浪漫- S3/ep01.mp4"),
+            SeriesProviderIds = new Dictionary<string, string> { { Constants.ProviderName, "317613" } }
+        }, _token);
+        Assert.IsNotNull(episodeData, "episode data should not be null");
+        Assert.IsNotNull(episodeData.Item, "episode data should not be null");
+        Assert.AreEqual(1, episodeData.Item.IndexNumber, "should fix episode index automatically");
+    }
+
+    [TestMethod]
+    public async Task LargeEpisodeIndex()
+    {
+        var episodeData = await _provider.GetMetadata(new EpisodeInfo
+        {
+            Path = FakePath.CreateFile("[CONAN][999][1080P][AVC_AAC][CHS_JP](B07242C7).mp4"),
+            IndexNumber = 999,
+            SeriesProviderIds = new Dictionary<string, string> { { Constants.ProviderName, "899" } }
+        }, _token);
+        Assert.IsNotNull(episodeData, "episode data should not be null");
+        Assert.IsNotNull(episodeData.Item, "episode data should not be null");
+        Assert.AreEqual("迷惑な親切心", episodeData.Item.Name, "should return the right episode title");
+    }
+
+    [TestMethod]
+    public async Task SpecialEpisodeSupport()
+    {
+        var episodeData = await _provider.GetMetadata(new EpisodeInfo
+        {
+            Path = FakePath.CreateFile("Spy x Family - 10 [WebRip 1080p HEVC-10bit AAC ASSx2].mkv"),
+            IndexNumber = 0,
+            SeriesProviderIds = new Dictionary<string, string> { { Constants.ProviderName, "329906" } }
+        }, _token);
+        Assert.IsNotNull(episodeData, "episode data should not be null");
+        Assert.IsNotNull(episodeData.Item, "episode data should not be null");
+        Assert.AreNotEqual(episodeData.Item.ParentIndexNumber, 0, "episode 10 is not special episode");
+        Assert.AreEqual("ドッジボール大作戦", episodeData.Item.Name, "should return the right episode title");
+
+        episodeData = await _provider.GetMetadata(new EpisodeInfo
+        {
+            Path = FakePath.CreateFile("[Sword Art Online - Alicization -War of Underworld-][00][BDRIP 1920x1080 HEVC-YUV420P10 FLAC].mkv"),
+            IndexNumber = 0,
+            SeriesProviderIds = new Dictionary<string, string> { { Constants.ProviderName, "279457" } }
+        }, _token);
+        Assert.IsNotNull(episodeData, "episode data should not be null");
+        Assert.IsNotNull(episodeData.Item, "episode data should not be null");
+        Assert.AreEqual(episodeData.Item.ParentIndexNumber, 0, "episode 0 is special episode");
+        Assert.AreEqual("リフレクション", episodeData.Item.Name, "should return the right episode title");
+    }
+
+    [TestMethod]
+    public async Task NonIntegerEpisodeIndexSupport()
+    {
+        var episodeData = await _provider.GetMetadata(new EpisodeInfo
+        {
+            Path = FakePath.CreateFile("Ore no Imouto ga Konna ni Kawaii Wake ga Nai - 12.5 [BD 1920x1080 x264 FLAC Sub(GB,Big5,Jap)].mkv"),
+            IndexNumber = 0,
+            SeriesProviderIds = new Dictionary<string, string> { { Constants.ProviderName, "5436" } }
+        }, _token);
+        Assert.IsNotNull(episodeData, "episode data should not be null");
+        Assert.IsNotNull(episodeData.Item, "episode data should not be null");
+        Assert.AreEqual("俺の妹の人生相談がこれで終わるわけがない TRUE ROUTE", episodeData.Item.Name, "should return the right episode title");
     }
 
     [TestMethod]
@@ -200,5 +264,22 @@ public class Episode
         Assert.IsNotNull(episodeData, "episode data should not be null");
         Assert.IsNotNull(episodeData.Item, "episode data should not be null");
         return episodeData.Item.IndexNumber;
+    }
+
+    [TestMethod]
+    public async Task GetEpisodeByAnitomySharp()
+    {
+        _plugin.Configuration.AlwaysGetEpisodeByAnitomySharp = true;
+        var episodeData = await _provider.GetMetadata(new EpisodeInfo
+        {
+            IndexNumber = 0,
+            Path = FakePath.CreateFile("[VCB-Studio] BEATLESS [Ma10p_1080p]/[VCB-Studio] BEATLESS [05][Ma10p_1080p][x265_flac].mkv"),
+            SeriesProviderIds = new Dictionary<string, string> { { Constants.ProviderName, "227102" } }
+        }, _token);
+        _plugin.Configuration.AlwaysGetEpisodeByAnitomySharp = false;
+        Assert.IsNotNull(episodeData, "episode data should not be null");
+        Assert.IsNotNull(episodeData.Item, "episode data should not be null");
+        Assert.AreEqual(5, episodeData.Item.IndexNumber, "should fix episode index automatically");
+        Assert.AreEqual("Tools for outsoucers", episodeData.Item.Name, "should return the right episode title");
     }
 }
