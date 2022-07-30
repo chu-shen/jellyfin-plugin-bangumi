@@ -40,25 +40,26 @@ public class SeriesProvider : IRemoteMetadataProvider<Series, SeriesInfo>, IHasO
         var result = new MetadataResult<Series> { ResultLanguage = Constants.Language };
 
         var subjectId = info.ProviderIds.GetOrDefault(Constants.ProviderName);
+        
+        if (string.IsNullOrEmpty(subjectId) && Configuration.AlwaysGetTitleByAnitomySharp)
+        {
+            // 不保证使用罗马音查询时返回正确结果
+            getSubjectId(Anitomy.ExtractAnimeTitle(baseName) ?? info.Name);
+        }
+        
         if (string.IsNullOrEmpty(subjectId))
         {
-            var searchName = Configuration.AlwaysGetTitleByAnitomySharp ? Anitomy.ExtractAnimeTitle(baseName) ?? info.Name : info.Name;
-            _log.LogInformation("Searching {Name} in bgm.tv", searchName);
-            var searchResult = await _api.SearchSubject(searchName, token);
-            searchResult = Subject.SortBySimilarity(searchResult, searchName);
-            if (info.Year != null)
-                searchResult = searchResult.FindAll(x => x.ProductionYear == null || x.ProductionYear == info.Year.ToString());
-            if (searchResult.Count > 0)
-                subjectId = $"{searchResult[0].Id}";
+            getSubjectId(info.Name);
         }
 
-        // try search OriginalTitle
         if (string.IsNullOrEmpty(subjectId) && info.OriginalTitle != null && !string.Equals(info.OriginalTitle, info.Name, StringComparison.Ordinal))
         {
-            var searchName = Configuration.AlwaysGetTitleByAnitomySharp ? Anitomy.ExtractAnimeTitle(baseName) ?? info.OriginalTitle : info.OriginalTitle;
+            getSubjectId(info.OriginalTitle);
+        }
+
+        void getSubjectId(string searchName){
             _log.LogInformation("Searching {Name} in bgm.tv", searchName);
             var searchResult = await _api.SearchSubject(searchName, token);
-            searchResult = Subject.SortBySimilarity(searchResult, searchName);
             if (info.Year != null)
                 searchResult = searchResult.FindAll(x => x.ProductionYear == null || x.ProductionYear == info.Year.ToString());
             if (searchResult.Count > 0)
