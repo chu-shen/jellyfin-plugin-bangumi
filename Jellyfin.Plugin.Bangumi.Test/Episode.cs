@@ -512,6 +512,7 @@ public class Episode
     {
         _plugin.Configuration.AlwaysParseEpisodeByAnitomySharp = true;
         _plugin.Configuration.AlwaysGetEpisodeByAnitomySharp = true;
+        _plugin.Configuration.RequestTimeout = 50000;
 
         //  Special(OAD)
         var episodeData = await _provider.GetMetadata(new EpisodeInfo
@@ -528,6 +529,98 @@ public class Episode
         Assert.IsNotNull(episodeData, "episode data should not be null");
         Assert.IsNotNull(episodeData.Item, "episode data should not be null");
         Assert.AreEqual("終われない夏休み", episodeData.Item.OriginalTitle, "should return the right episode title");
+
+        // 多季度且文件序号连续
+        episodeData = await _provider.GetMetadata(new EpisodeInfo
+        {
+            IndexNumber = 0,
+            Path = FakePath.CreateFile("[Gintama S4 Part1][323][BDRIP][1080P][H264_FLAC].mkv"),
+            SeriesProviderIds = new Dictionary<string, string>
+            {
+                {
+                    Constants.ProviderName, "247"
+                }
+            }
+        }, _token);
+        Assert.IsNotNull(episodeData, "episode data should not be null");
+        Assert.IsNotNull(episodeData.Item, "episode data should not be null");
+        Assert.AreEqual(323, episodeData.Item.IndexNumber, "should fix episode index automatically");
+        Assert.AreEqual("道", episodeData.Item.OriginalTitle, "should return the right episode title");
+        episodeData = await _provider.GetMetadata(new EpisodeInfo
+        {
+            IndexNumber = 0,
+            Path = FakePath.CreateFile("[Gintama S4 Part3][347][BDRIP][1080P][H264_FLAC].mkv"),
+            SeriesProviderIds = new Dictionary<string, string>
+            {
+                {
+                    Constants.ProviderName, "247"
+                }
+            }
+        }, _token);
+        Assert.IsNotNull(episodeData, "episode data should not be null");
+        Assert.IsNotNull(episodeData.Item, "episode data should not be null");
+        Assert.AreEqual(347, episodeData.Item.IndexNumber, "should fix episode index automatically");
+        Assert.AreEqual("無駄を覚えた機械を人間という", episodeData.Item.OriginalTitle, "should return the right episode title");
+        episodeData = await _provider.GetMetadata(new EpisodeInfo
+        {
+            IndexNumber = 0,
+            Path = FakePath.CreateFile("[Gintama S2][235][JPN][BDRIP][1080P][H264_FLAC].mkv"),
+            SeriesProviderIds = new Dictionary<string, string>
+            {
+                {
+                    Constants.ProviderName, "247"
+                }
+            }
+        }, _token);
+        Assert.IsNotNull(episodeData, "episode data should not be null");
+        Assert.IsNotNull(episodeData.Item, "episode data should not be null");
+        Assert.AreEqual(235, episodeData.Item.IndexNumber, "should fix episode index automatically");
+        Assert.AreEqual("空の星", episodeData.Item.OriginalTitle, "should return the right episode title");
+        episodeData = await _provider.GetMetadata(new EpisodeInfo
+        {
+            IndexNumber = 0,
+            Path = FakePath.CreateFile("らんま½ 第150話 できた！八宝大カビン (1080p x265 Ma10p FLAC).mkv"),
+            SeriesProviderIds = new Dictionary<string, string>
+            {
+                {
+                    Constants.ProviderName, "2789"
+                }
+            }
+        }, _token);
+        Assert.IsNotNull(episodeData, "episode data should not be null");
+        Assert.IsNotNull(episodeData.Item, "episode data should not be null");
+        Assert.AreEqual(150, episodeData.Item.IndexNumber, "should fix episode index automatically");
+        Assert.AreEqual("できた!八宝大カビン", episodeData.Item.OriginalTitle, "should return the right episode title");
+        episodeData = await _provider.GetMetadata(new EpisodeInfo
+        {
+            IndexNumber = 0,
+            Path = FakePath.CreateFile("[VCB-Studio] Mobile Suit Gundam 00 [26][Ma10p_1080p][x265_flac].mkv"),
+            SeriesProviderIds = new Dictionary<string, string>
+            {
+                {
+                    Constants.ProviderName, "286"
+                }
+            }
+        }, _token);
+        Assert.IsNotNull(episodeData, "episode data should not be null");
+        Assert.IsNotNull(episodeData.Item, "episode data should not be null");
+        Assert.AreEqual(26, episodeData.Item.IndexNumber, "should fix episode index automatically");
+        Assert.AreEqual("天使再臨", episodeData.Item.OriginalTitle, "should return the right episode title");
+        episodeData = await _provider.GetMetadata(new EpisodeInfo
+        {
+            IndexNumber = 0,
+            Path = FakePath.CreateFile("[VCB-Studio] Mobile Suit Gundam 00 [32][Ma10p_1080p][x265_flac].mkv"),
+            SeriesProviderIds = new Dictionary<string, string>
+            {
+                {
+                    Constants.ProviderName, "286"
+                }
+            }
+        }, _token);
+        Assert.IsNotNull(episodeData, "episode data should not be null");
+        Assert.IsNotNull(episodeData.Item, "episode data should not be null");
+        Assert.AreEqual(32, episodeData.Item.IndexNumber, "should fix episode index automatically");
+        Assert.AreEqual("再会と離別と", episodeData.Item.OriginalTitle, "should return the right episode title");
 
         // Special(OVA)
         episodeData = await _provider.GetMetadata(new EpisodeInfo

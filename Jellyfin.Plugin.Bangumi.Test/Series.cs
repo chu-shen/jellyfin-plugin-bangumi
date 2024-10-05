@@ -126,11 +126,13 @@ public class Series
     [TestMethod]
     public async Task SearchByNewApi()
     {
+        _plugin.Configuration.UseTestingSearchApi = true;
         var searchResults = await _provider.GetSearchResults(new SeriesInfo
         {
             Name = "命运-奇异赝品 黎明低语",
             Path = FakePath.Create("Fate Strange Fake Whispers of Dawn")
         }, _token);
+        _plugin.Configuration.UseTestingSearchApi = false;
         Assert.IsTrue(searchResults.Any(x => x.ProviderIds[Constants.ProviderName].Equals("402128")), "should have correct search result");
     }
 

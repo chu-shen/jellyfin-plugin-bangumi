@@ -10,8 +10,10 @@ using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.Bangumi.Model;
 using Jellyfin.Plugin.Bangumi.OAuth;
+using Jellyfin.Plugin.Bangumi.ScheduledTasks;
 using MediaBrowser.Common.Net;
 using MediaBrowser.Controller.Entities;
+using Microsoft.Extensions.Logging;
 using JellyfinPersonType = MediaBrowser.Model.Entities.PersonType;
 
 namespace Jellyfin.Plugin.Bangumi;
@@ -28,11 +30,17 @@ public class BangumiApi
 
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly OAuthStore _store;
+    private readonly CacheManager _cacheManager;
 
-    public BangumiApi(IHttpClientFactory httpClientFactory, OAuthStore store)
+    private readonly ILoggerFactory _loggerFactory;
+    private readonly ILogger<BangumiApi> _log;
+    public BangumiApi(IHttpClientFactory httpClientFactory, OAuthStore store, ILoggerFactory loggerFactory)
     {
         _httpClientFactory = httpClientFactory;
         _store = store;
+        _loggerFactory = loggerFactory;
+        _cacheManager = new CacheManager(_loggerFactory.CreateLogger<CacheManager>());
+        _log = _loggerFactory.CreateLogger<BangumiApi>();
     }
 
     private static Plugin Plugin => Plugin.Instance!;
@@ -61,12 +69,28 @@ public class BangumiApi
             }
             else
             {
-                var url = $"https://api.bgm.tv/search/subject/{Uri.EscapeDataString(keyword)}?responseGroup=large";
+                string cacheKey;
                 if (type != null)
-                    url += $"&type={(int)type}";
-                var searchResult = await SendRequest<SearchResult<Subject>>(url, token);
-                var list = searchResult?.List ?? new List<Subject>();
-                return Subject.SortBySimilarity(list, keyword);
+                    cacheKey = _cacheManager.GenerateCacheKey("SearchSubject", keyword, type);
+                else
+                    cacheKey = _cacheManager.GenerateCacheKey("SearchSubject", keyword);
+
+                Func<Task<List<Subject>?>> getDataFunc = async () =>
+                    {
+                        var url = $"https://api.bgm.tv/search/subject/{Uri.EscapeDataString(keyword)}?responseGroup=large";
+                        if (type != null)
+                            url += $"&type={(int)type}";
+                        var searchResult = await SendRequest<SearchResult<Subject>>(url, token);
+                        var list = searchResult?.List ?? new List<Subject>();
+                        return Subject.SortBySimilarity(list, keyword);
+                    };
+
+                var cachedResult = await _cacheManager.GetCachedResult(cacheKey, getDataFunc, TimeSpan.FromTicks(TimeSpan.TicksPerHour));
+                if (cachedResult != null)
+                {
+                    return cachedResult;
+                }
+                return new List<Subject>();
             }
         }
         catch (JsonException)
@@ -78,7 +102,11 @@ public class BangumiApi
 
     public async Task<Subject?> GetSubject(int id, CancellationToken token)
     {
-        return await SendRequest<Subject>($"https://api.bgm.tv/v0/subjects/{id}", token);
+        string cacheKey = _cacheManager.GenerateCacheKey("Subject", id);
+
+        Func<Task<Subject?>> getDataFunc = () => SendRequest<Subject>($"https://api.bgm.tv/v0/subjects/{id}", token);
+
+        return await _cacheManager.GetCachedResult(cacheKey, getDataFunc, TimeSpan.FromTicks(TimeSpan.TicksPerHour));
     }
 
     public async Task<List<Episode>?> GetSubjectEpisodeList(int id, EpisodeType? type, double episodeNumber, CancellationToken token)
@@ -97,7 +125,7 @@ public class BangumiApi
         var initialResult = result;
         var history = new HashSet<int>();
 
-        RequestEpisodeList:
+    RequestEpisodeList:
         if (offset < 0)
             return result.Data;
         if (offset > result.Total)
@@ -137,18 +165,33 @@ public class BangumiApi
 
     public async Task<DataList<Episode>?> GetSubjectEpisodeListWithOffset(int id, EpisodeType? type, double offset, CancellationToken token)
     {
-        var url = $"https://api.bgm.tv/v0/episodes?subject_id={id}&limit={PageSize}";
-        if (type != null)
-            url += $"&type={(int)type}";
-        if (offset > 0)
-            url += $"&offset={offset}";
-        return await SendRequest<DataList<Episode>>(url, token);
+        string cacheKey;
+        if (type!=null)
+            cacheKey = _cacheManager.GenerateCacheKey("SubjectEpisodeList", id, type, offset);
+        else
+            cacheKey = _cacheManager.GenerateCacheKey("SubjectEpisodeList", id, offset);
+
+        Func<Task<DataList<Episode>?>> getDataFunc = async () =>
+        {
+            var url = $"https://api.bgm.tv/v0/episodes?subject_id={id}&limit={PageSize}";
+            if (type != null)
+                url += $"&type={(int)type}";
+            if (offset > 0)
+                url += $"&offset={offset}";
+            return await SendRequest<DataList<Episode>>(url, token);
+        };
+
+        return await _cacheManager.GetCachedResult(cacheKey, getDataFunc, TimeSpan.FromTicks(TimeSpan.TicksPerHour));
     }
 
     public async Task<List<PersonInfo>> GetSubjectCharacters(int id, CancellationToken token)
     {
         var result = new List<PersonInfo>();
         var characters = await SendRequest<List<RelatedCharacter>>($"https://api.bgm.tv/v0/subjects/{id}/characters", token);
+        if (characters is not null)
+        {
+            characters = characters.OrderBy(c => c.Relation == "主角" ? 0 : c.Relation == "配角" ? 1 : 2).ToList();
+        }
         characters?.ForEach(character =>
         {
             if (character.Actors == null)
@@ -271,6 +314,51 @@ public class BangumiApi
         httpClient.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("(https://github.com/kookxiang/jellyfin-plugin-bangumi)"));
         httpClient.Timeout = TimeSpan.FromMilliseconds(Plugin.Configuration.RequestTimeout);
         return httpClient;
+    }
+
+    public async Task<List<Subject>?> GetRelatedSubject(int id, CancellationToken token)
+    {
+        string cacheKey = _cacheManager.GenerateCacheKey("RelatedSubject", id);
+        _log.LogDebug("GetRelatedSubject of: {id}", id);
+
+        Func<Task<List<Subject>?>> getDataFunc = () => SendRequest<List<Subject>?>($"https://api.bgm.tv/v0/subjects/{id}/subjects", token);
+
+        return await _cacheManager.GetCachedResult(cacheKey, getDataFunc, TimeSpan.FromTicks(TimeSpan.TicksPerHour));
+    }
+    public async Task<List<int>> GetAllSeriesSubjectIds(int seriesId, CancellationToken token){
+        List<int> subjectIds = new List<int>();
+        HashSet<int> visited = new HashSet<int>();
+        var queue = new Queue<int>();
+        queue.Enqueue(seriesId);
+        _log.LogDebug("GetAllSeriesSubjectIds of: {seriesId}", seriesId);
+
+        while (queue.Count > 0)
+        {
+            var currentSeriesId = queue.Dequeue();
+            if (!visited.Contains(currentSeriesId))
+            {
+                visited.Add(currentSeriesId);
+                subjectIds.Add(currentSeriesId);
+
+                var results = await GetRelatedSubject(currentSeriesId, token);
+                if (results is null)
+                    continue;
+
+                foreach (var result in results)
+                {
+                    var subjectId = result.Id;
+                    if (result.Relation == "续集" || result.Relation == "前传") // 衍生、主线故事
+                    {
+                        queue.Enqueue(subjectId);
+                    }
+                    if (result.Relation == "番外篇" || result.Relation == "总集篇")
+                    {
+                        subjectIds.Add(subjectId);
+                    }
+                }
+            }
+        }
+        return subjectIds;
     }
 
     private class JsonContent : StringContent

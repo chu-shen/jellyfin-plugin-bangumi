@@ -27,7 +27,7 @@ public class EpisodeProvider : IRemoteMetadataProvider<Episode, EpisodeInfo>, IH
     private readonly ILoggerFactory _loggerFactory;
     private readonly ILogger<EpisodeProvider> _log;
 
-    public EpisodeProvider(BangumiApi api, ILoggerFactory loggerFactory, ILibraryManager libraryManager,IFileSystem fileSystem)
+    public EpisodeProvider(BangumiApi api, ILoggerFactory loggerFactory, ILibraryManager libraryManager, IFileSystem fileSystem)
     {
         _api = api;
         _loggerFactory = loggerFactory;
@@ -47,7 +47,7 @@ public class EpisodeProvider : IRemoteMetadataProvider<Episode, EpisodeInfo>, IH
 
         var localConfiguration = await LocalConfiguration.ForPath(info.Path);
 
-        EpisodeHandler episodeHandler = new EpisodeHandler(_api, _loggerFactory, _libraryManager, Configuration, info, localConfiguration, token,_fileSystem);
+        EpisodeHandler episodeHandler = new EpisodeHandler(_api, _loggerFactory, _libraryManager, Configuration, info, localConfiguration, token, _fileSystem);
         var episode = await episodeHandler.GetEpisode();
         _log.LogInformation("metadata for {FilePath}: {EpisodeInfo}", Path.GetFileName(info.Path), episode);
 
@@ -74,8 +74,22 @@ public class EpisodeProvider : IRemoteMetadataProvider<Episode, EpisodeInfo>, IH
         else
             result.Item.ProviderIds.Add(Constants.ProviderName, null);
 
-        // 由于缺乏将季度设置为`1`的判断条件，而特典`Specials`判断条件多。将值设置为`1`有助于纠正错误季度
-        result.Item.ParentIndexNumber = info.ParentIndexNumber == null || info.ParentIndexNumber==0 ? 1 : info.ParentIndexNumber;
+        if (Configuration.TrustExistedBangumiId)
+        {
+            // 由于缺乏将季度设置为`1`的判断条件，而特典`Specials`判断条件多。将值设置为`1`有助于纠正错误季度
+            result.Item.ParentIndexNumber = info.ParentIndexNumber == null || info.ParentIndexNumber == 0 ? 1 : info.ParentIndexNumber;
+        }
+        else if (Configuration.AlwaysParseEpisodeByAnitomySharp)
+        {
+            // 使用 AnitomySharp 解析出的季度
+            var anitomy = new Jellyfin.Plugin.Bangumi.Anitomy(Path.GetFileName(info.Path));
+            result.Item.ParentIndexNumber = int.Parse(anitomy.ExtractAnimeSeason() ?? "1");
+        }
+        else
+        {
+            // 不信任 Jellyfin 给出的季度信息，Jellyfin 会将年份，如年份 2022 被拆分为：第 20 季与第 22 集
+            result.Item.ParentIndexNumber = 1;
+        }
         _log.LogDebug("Parent index number: {index} in info metadata", info.ParentIndexNumber);
 
         var parent = _libraryManager.FindByPath(Path.GetDirectoryName(info.Path), true);
@@ -83,8 +97,8 @@ public class EpisodeProvider : IRemoteMetadataProvider<Episode, EpisodeInfo>, IH
         // 默认使用基础规则判断季度类型
         if (!Configuration.AlwaysParseEpisodeByAnitomySharp && BasicEpisodeParser.IsSpecial(info.Path))
             result.Item.ParentIndexNumber = 0;
-        
-        if (episode.Type != EpisodeType.Normal ||  episode.Id == 0)
+
+        if (episode.Type != EpisodeType.Normal || episode.Id == 0)
         {
             result.Item.ParentIndexNumber = 0;
         }

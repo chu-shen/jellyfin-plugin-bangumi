@@ -1,0 +1,47 @@
+name: Build
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches:
+      - master
+      - feature-AnitomySharp
+
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 6.0.x
+
+    - name: Restore dependencies
+      run: dotnet restore
+    - name: Build
+      run: dotnet build --configuration Debug --no-restore --output assets
+    - name: Test
+      run: dotnet test --no-build --verbosity normal
+
+    - name: Upload a Build Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: Jellyfin.Plugin.Bangumi
+        path: assets/Jellyfin.Plugin.Bangumi.dll
+        if-no-files-found: error
+        retention-days: 30
+
+    - name: release-please
+      uses: googleapis/release-please-action@v4
+      id: release
+      with:
+        release-type: simple
+    - name: Upload Release Artifact
+      if: ${{ steps.release.outputs.release_created }}
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run:
+        gh release upload ${{ steps.release.outputs.tag_name }} assets/Jellyfin.Plugin.Bangumi.dll

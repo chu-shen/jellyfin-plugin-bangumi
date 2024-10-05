@@ -29,8 +29,10 @@ public class PluginConfiguration : BasePluginConfiguration
     public bool AlwaysGetTitleByAnitomySharp { get; set; }
 
     public bool AlwaysGetEpisodeByAnitomySharp { get; set; }
-    
+
     public bool AlwaysParseEpisodeByAnitomySharp { get; set; }
+
+    public bool AlwaysProcessMultiSeasonFolderByAnitomySharp { get; set; }
 
     public bool UseTestingSearchApi { get; set; }
 }

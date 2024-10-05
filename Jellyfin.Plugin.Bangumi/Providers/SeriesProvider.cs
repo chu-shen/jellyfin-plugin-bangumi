@@ -68,6 +68,21 @@ public class SeriesProvider : IRemoteMetadataProvider<Series, SeriesInfo>, IHasO
                 searchResult = searchResult.FindAll(x => x.ProductionYear == animeYear);
             if (searchResult.Count > 0)
             {
+                if (searchResult.Count > 1)
+                {
+                    var subjectWithInfobox = new List<Subject>();
+                    for (int i = 0; i < Math.Min(3, searchResult.Count); i++)
+                    {
+                        var ss = await _api.GetSubject(searchResult[i].Id, token);
+                        if (ss != null)
+                        {
+                            _log.LogDebug("sort subject: {on} with infobox",ss.OriginalName);
+                            subjectWithInfobox.Add(ss);
+                        }
+                    }
+                    searchResult = Subject.SortBySimilarity(subjectWithInfobox, searchName);
+                }
+
                 subjectId = searchResult[0].Id;
                 _log.LogDebug("Use subject id: {id}", subjectId);
             }
@@ -163,6 +178,20 @@ public class SeriesProvider : IRemoteMetadataProvider<Series, SeriesInfo>, IHasO
         {
             var series = await _api.SearchSubject(searchInfo.Name, token);
             series = Subject.SortBySimilarity(series, searchInfo.Name);
+            if (series.Count > 1)
+            {
+                var subjectWithInfobox = new List<Subject>();
+                for (int i = 0; i < Math.Min(3, series.Count); i++)
+                {
+                    var ss = await _api.GetSubject(series[i].Id, token);
+                    if (ss != null)
+                    {
+                        _log.LogDebug("sort subject: {on} with infobox", ss.OriginalName);
+                        subjectWithInfobox.Add(ss);
+                    }
+                }
+                series = Subject.SortBySimilarity(subjectWithInfobox, searchInfo.Name);
+            }
             foreach (var item in series)
             {
                 var itemId = $"{item.Id}";
