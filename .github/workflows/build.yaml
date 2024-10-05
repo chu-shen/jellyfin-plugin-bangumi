@@ -22,7 +22,7 @@ jobs:
     - name: Restore dependencies
       run: dotnet restore
     - name: Build
-      run: dotnet build --configuration Debug --no-restore --output assets
+      run: dotnet build --configuration Release --no-restore --output assets Jellyfin.Plugin.Bangumi
     - name: Test
       run: dotnet test --no-build --verbosity normal
 
@@ -30,7 +30,7 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: Jellyfin.Plugin.Bangumi
-        path: assets/Jellyfin.Plugin.Bangumi.dll
+        path: assets/*.dll
         if-no-files-found: error
         retention-days: 30
 
@@ -44,4 +44,4 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run:
-        gh release upload ${{ steps.release.outputs.tag_name }} assets/Jellyfin.Plugin.Bangumi.dll
+        gh release upload ${{ steps.release.outputs.tag_name }} assets/*.dll
