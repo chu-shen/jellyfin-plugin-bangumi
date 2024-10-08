@@ -147,7 +147,7 @@ public partial class BangumiApi
         return await SendRequest<DataList<Episode>>(url, token);
     }
 
-    public async Task<List<RelatedSubject>?> GetSubjectRelations(int id, CancellationToken token)
+    public async Task<List<RelatedSubject>?> GetRelatedSubjects(int id, CancellationToken token)
     {
         return await SendRequest<List<RelatedSubject>>($"{BaseUrl}/v0/subjects/{id}/subjects", token);
     }
@@ -164,7 +164,7 @@ public partial class BangumiApi
         var requestCount = 0;
         //What would happen in Emby if I use `_plugin`?
         int maxRequestCount = Plugin.Instance?.Configuration?.SeasonGuessMaxSearchCount ?? 2;
-        var relatedSubjects = await GetSubjectRelations(id, token);
+        var relatedSubjects = await GetRelatedSubjects(id, token);
         var subjectsQueue = new Queue<RelatedSubject>(relatedSubjects?.Where(item => item.Relation == SubjectRelation.Sequel) ?? []);
         while (subjectsQueue.Any() && requestCount < maxRequestCount)
         {
@@ -173,7 +173,7 @@ public partial class BangumiApi
             requestCount++;
             if (subjectCandidate != null && SeriesSequelUnqualified(subjectCandidate))
             {
-                var nextRelatedSubjects = await GetSubjectRelations(subjectCandidate.Id, token);
+                var nextRelatedSubjects = await GetRelatedSubjects(subjectCandidate.Id, token);
                 foreach (var nextRelatedSubject in nextRelatedSubjects?.Where(item => item.Relation == SubjectRelation.Sequel) ?? [])
                 {
                     subjectsQueue.Enqueue(nextRelatedSubject);
@@ -216,7 +216,7 @@ public partial class BangumiApi
                 allSubjectIds.Add(currentSeriesId);
 
                 // 获取关联条目
-                var results = await GetSubjectRelations(currentSeriesId, token);
+                var results = await GetRelatedSubjects(currentSeriesId, token);
                 if (results is null)
                     continue;
 
