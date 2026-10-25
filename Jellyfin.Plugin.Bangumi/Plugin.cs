@@ -1,5 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Xml;
 using Jellyfin.Plugin.Bangumi.Configuration;
 using MediaBrowser.Common.Configuration;
 using MediaBrowser.Common.Plugins;
@@ -15,6 +17,41 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
     public Plugin(IApplicationPaths applicationPaths, IXmlSerializer xmlSerializer) : base(applicationPaths, xmlSerializer)
     {
         Instance = this;
+        if (MigrateLegacyMultiSeasonConfiguration(Configuration, ConfigurationFilePath))
+            SaveConfiguration();
+    }
+
+    internal static bool MigrateLegacyMultiSeasonConfiguration(PluginConfiguration configuration, string configurationPath)
+    {
+        if (!File.Exists(configurationPath))
+            return false;
+
+        try
+        {
+            using var reader = XmlReader.Create(configurationPath, new XmlReaderSettings
+            {
+                DtdProcessing = DtdProcessing.Prohibit,
+                XmlResolver = null
+            });
+            while (reader.Read())
+            {
+                if (reader.NodeType == XmlNodeType.Element &&
+                    reader.LocalName == nameof(PluginConfiguration.ProcessMultiSeasonWithConsecutiveIndexByAnitomySharp))
+                    return false;
+            }
+        }
+        catch (XmlException)
+        {
+            return false;
+        }
+        catch (IOException)
+        {
+            return false;
+        }
+
+        // Older versions always tried this fallback when the basic Anitomy match failed.
+        configuration.ProcessMultiSeasonWithConsecutiveIndexByAnitomySharp = true;
+        return true;
     }
 
     /// <inheritdoc />
@@ -26,6 +63,11 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
     /// <inheritdoc />
     public IEnumerable<PluginPageInfo> GetPages()
     {
+        var scriptResource = $"{GetType().Namespace}.Configuration.Main.js";
+#if DEBUG
+        if (WebDevelopmentController.ServerUrl is not null)
+            scriptResource = $"{GetType().Namespace}.Configuration.Development.js";
+#endif
         return
         [
             new PluginPageInfo
@@ -39,12 +81,12 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
             new PluginPageInfo
             {
                 Name = "Plugin.Bangumi.Configuration.Script",
-                EmbeddedResourcePath = $"{GetType().Namespace}.Configuration.Main.js"
+                EmbeddedResourcePath = scriptResource
             },
             new PluginPageInfo
             {
-                Name = "Plugin.Bangumi.Configuration.Style",
-                EmbeddedResourcePath = $"{GetType().Namespace}.Configuration.Style.css"
+                Name = "Plugin.Bangumi.UserSettings.Script",
+                EmbeddedResourcePath = scriptResource
             },
             new PluginPageInfo
             {
@@ -54,13 +96,15 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
             },
             new PluginPageInfo
             {
-                Name = "Plugin.Bangumi.Tools.DuplicatedEpisodesDetector.Script",
-                EmbeddedResourcePath = $"{GetType().Namespace}.Tools.DuplicatedEpisodesDetector.Script.js"
+                Name = "Plugin.Bangumi.Tools.FixEpisodeMetadata",
+                DisplayName = "修正错误的剧集元数据",
+                EmbeddedResourcePath = $"{GetType().Namespace}.Tools.FixEpisodeMetadata.Index.html"
             },
             new PluginPageInfo
             {
-                Name = "Plugin.Bangumi.Tools.DuplicatedEpisodesDetector.Style",
-                EmbeddedResourcePath = $"{GetType().Namespace}.Tools.DuplicatedEpisodesDetector.Style.css"
+                Name = "Plugin.Bangumi.Tools.MissingBangumiId",
+                DisplayName = "缺失 Bangumi ID 的视频",
+                EmbeddedResourcePath = $"{GetType().Namespace}.Tools.MissingBangumiId.Index.html"
             },
         ];
     }

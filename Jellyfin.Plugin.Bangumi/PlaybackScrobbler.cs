@@ -54,6 +54,8 @@ public class PlaybackScrobbler(IUserDataManager userDataManager, OAuthStore stor
 
     private async Task ReportPlaybackStatus(BaseItem item, Guid userId, bool played)
     {
+        if (item.IsVirtualItem || string.IsNullOrEmpty(item.Path)) return;
+
         Episode? episode = null;
         var localConfiguration = await LocalConfiguration.ForPath(item.Path);
         if (!int.TryParse(item.GetProviderId(Constants.ProviderName), out var episodeId))
@@ -94,6 +96,7 @@ public class PlaybackScrobbler(IUserDataManager userDataManager, OAuthStore stor
             return;
         }
 
+        var reportPrivate = false;
         try
         {
             if (item is Book)
@@ -119,6 +122,7 @@ public class PlaybackScrobbler(IUserDataManager userDataManager, OAuthStore stor
                     log.Info("item #{Name} marked as NSFW, skipped", item.Name);
                     return;
                 }
+                reportPrivate = subject?.IsNSFW == true && Configuration.PrivateNSFWPlaybackReport;
 
                 var episodeStatus = await api.GetEpisodeStatus(user.AccessToken, episodeId, CancellationToken.None);
                 if (episodeStatus?.Type == EpisodeCollectionType.Watched)
@@ -145,7 +149,7 @@ public class PlaybackScrobbler(IUserDataManager userDataManager, OAuthStore stor
             if (played && IsErrorFromUncollectedSubject(e))
             {
                 log.Info("report subject #{Subject} status {Status} to bangumi", subjectId, CollectionType.Watching);
-                await api.UpdateCollectionStatus(user.AccessToken, subjectId, CollectionType.Watching, CancellationToken.None);
+                await api.UpdateCollectionStatus(user.AccessToken, subjectId, CollectionType.Watching, CancellationToken.None, reportPrivate);
 
                 log.Info("report episode #{Episode} status {Status} to bangumi", episodeId, EpisodeCollectionType.Watched);
                 await api.UpdateEpisodeStatus(user.AccessToken,
@@ -171,7 +175,7 @@ public class PlaybackScrobbler(IUserDataManager userDataManager, OAuthStore stor
         if (epList is { Total: > 0 } && epList.Data.All(ep => ep.Type == EpisodeCollectionType.Watched))
         {
             log.Info("report subject #{Subject} status {Status} to bangumi", subjectId, CollectionType.Watched);
-            await api.UpdateCollectionStatus(user.AccessToken, subjectId, CollectionType.Watched, CancellationToken.None);
+            await api.UpdateCollectionStatus(user.AccessToken, subjectId, CollectionType.Watched, CancellationToken.None, reportPrivate);
         }
     }
 

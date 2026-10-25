@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Data.Enums;
@@ -25,10 +26,19 @@ namespace Jellyfin.Plugin.Bangumi.Test.Mock;
 
 public class MockedLibraryManager : ILibraryManager
 {
+    public Func<FileSystemMetadata, Folder?, BaseItem?>? PathResolver { get; set; }
+    public LibraryOptions LibraryOptions { get; set; } = new();
+    public Func<InternalItemsQuery, IReadOnlyList<BaseItem>>? ItemQuery { get; set; }
+    public Func<InternalItemsQuery, QueryResult<BaseItem>>? ItemsResultQuery { get; set; }
     private readonly Dictionary<string, BaseItem> _items = [];
     private readonly Dictionary<Guid, List<BaseItem>> _children = [];
 
-    public BaseItem? ResolvePath(FileSystemMetadata fileInfo, Folder? parent = null, IDirectoryService? directoryService = null)
+    public BaseItem? ResolvePath(FileSystemMetadata fileInfo, Folder? parent = null, IDirectoryService? directoryService = null, CollectionType? collectionType = null)
+    {
+        return PathResolver != null ? PathResolver(fileInfo, parent) : throw new NotImplementedException();
+    }
+
+    public Video? ResolveAlternateVersion(string path, Type expectedVideoType, Folder? parent, CollectionType? collectionType)
     {
         throw new NotImplementedException();
     }
@@ -39,6 +49,11 @@ public class MockedLibraryManager : ILibraryManager
     }
 
     public MediaBrowser.Controller.Entities.Person? GetPerson(string name)
+    {
+        throw new NotImplementedException();
+    }
+
+    public MediaBrowser.Controller.Entities.Person GetOrCreatePerson(string name)
     {
         throw new NotImplementedException();
     }
@@ -101,14 +116,21 @@ public class MockedLibraryManager : ILibraryManager
         throw new NotImplementedException();
     }
 
+    public void ClearIgnoreRuleCache()
+    {
+        throw new NotImplementedException();
+    }
+
     public Task UpdateImagesAsync(BaseItem item, bool forceUpdate = false)
     {
         throw new NotImplementedException();
     }
 
+    public List<VirtualFolderInfo> VirtualFolders { get; } = [];
+
     public List<VirtualFolderInfo> GetVirtualFolders()
     {
-        throw new NotImplementedException();
+        return VirtualFolders;
     }
 
     public List<VirtualFolderInfo> GetVirtualFolders(bool includeRefreshState)
@@ -118,7 +140,7 @@ public class MockedLibraryManager : ILibraryManager
 
     public BaseItem? GetItemById(Guid id)
     {
-        throw new NotImplementedException();
+        return _items.Values.FirstOrDefault(item => item.Id == id);
     }
 
     public T? GetItemById<T>(Guid id) where T : BaseItem
@@ -137,6 +159,26 @@ public class MockedLibraryManager : ILibraryManager
     }
 
     public Task<IEnumerable<Video>> GetIntros(BaseItem item, User user)
+    {
+        throw new NotImplementedException();
+    }
+
+    public IEnumerable<Guid> GetLocalAlternateVersionIds(Video video)
+    {
+        throw new NotImplementedException();
+    }
+
+    public IEnumerable<Video> GetLinkedAlternateVersions(Video video)
+    {
+        throw new NotImplementedException();
+    }
+
+    public IReadOnlySet<Guid> GetItemIdsWithAlternateVersions(IReadOnlyList<Guid> itemIds)
+    {
+        throw new NotImplementedException();
+    }
+
+    public void UpsertLinkedChild(Guid parentId, Guid childId, MediaBrowser.Controller.Entities.LinkedChildType childType)
     {
         throw new NotImplementedException();
     }
@@ -203,6 +245,11 @@ public class MockedLibraryManager : ILibraryManager
         return Task.CompletedTask;
     }
 
+    public Task ReattachUserDataAsync(BaseItem item, CancellationToken cancellationToken)
+    {
+        throw new NotImplementedException();
+    }
+
     public BaseItem RetrieveItem(Guid id)
     {
         throw new NotImplementedException();
@@ -244,6 +291,11 @@ public class MockedLibraryManager : ILibraryManager
     }
 
     public void DeleteItemsUnsafeFast(IEnumerable<BaseItem> items)
+    {
+        throw new NotImplementedException();
+    }
+
+    public void DeleteItemsUnsafeFast(IReadOnlyCollection<BaseItem> items, bool deleteSourceFiles = false)
     {
         throw new NotImplementedException();
     }
@@ -320,7 +372,7 @@ public class MockedLibraryManager : ILibraryManager
 
     public LibraryOptions GetLibraryOptions(BaseItem item)
     {
-        throw new NotImplementedException();
+        return LibraryOptions;
     }
 
     public IReadOnlyList<PersonInfo> GetPeople(BaseItem item)
@@ -333,7 +385,7 @@ public class MockedLibraryManager : ILibraryManager
         throw new NotImplementedException();
     }
 
-    public IReadOnlyList<MediaBrowser.Controller.Entities.Person> GetPeopleItems(InternalPeopleQuery query)
+    public QueryResult<BaseItem> GetPeopleItems(InternalPeopleQuery query)
     {
         throw new NotImplementedException();
     }
@@ -358,6 +410,21 @@ public class MockedLibraryManager : ILibraryManager
         throw new NotImplementedException();
     }
 
+    public int DeleteOrphanedCredits()
+    {
+        throw new NotImplementedException();
+    }
+
+    public IReadOnlyDictionary<Guid, IReadOnlyList<string>> GetPeopleNamesByItems(IReadOnlyList<Guid> itemIds, IReadOnlyList<string> personTypes)
+    {
+        throw new NotImplementedException();
+    }
+
+    public IReadOnlyDictionary<Guid, IReadOnlyList<PersonInfo>> GetPeopleByItems(IReadOnlyList<Guid> itemIds)
+    {
+        throw new NotImplementedException();
+    }
+
     public QueryResult<BaseItem> QueryItems(InternalItemsQuery query)
     {
         throw new NotImplementedException();
@@ -375,8 +442,28 @@ public class MockedLibraryManager : ILibraryManager
 
     public IReadOnlyList<BaseItem> GetItemList(InternalItemsQuery query)
     {
+        if (ItemQuery is not null) return ItemQuery(query);
+        if ((query.Recursive && query.ParentId != Guid.Empty) || query.AncestorIds.Length > 0)
+        {
+            var ancestors = query.AncestorIds.Length > 0 ? query.AncestorIds : [query.ParentId];
+            var pending = new Queue<Guid>(ancestors);
+            var descendants = new List<BaseItem>();
+            while (pending.TryDequeue(out var parentId))
+            {
+                if (!_children.TryGetValue(parentId, out var nested)) continue;
+                descendants.AddRange(nested);
+                foreach (var item in nested) pending.Enqueue(item.Id);
+            }
+            return descendants.Where(item => query.IncludeItemTypes.Length == 0 ||
+                query.IncludeItemTypes.Contains(item.GetBaseItemKind())).ToList();
+        }
         if (_children.TryGetValue(query.ParentId, out var children))
             return children;
+        if (query.IncludeItemTypes.Length == 1 && query.IncludeItemTypes[0] == BaseItemKind.Series)
+            return _items.Values.OfType<MediaBrowser.Controller.Entities.TV.Series>().ToList();
+        if (query.IncludeItemTypes.Contains(BaseItemKind.Series) &&
+            query.IncludeItemTypes.Contains(BaseItemKind.Episode))
+            return _items.Values.ToList();
         return Array.Empty<BaseItem>();
     }
 
@@ -400,12 +487,29 @@ public class MockedLibraryManager : ILibraryManager
         throw new NotImplementedException();
     }
 
-    public QueryResult<BaseItem> GetItemsResult(InternalItemsQuery query)
+    public IReadOnlyDictionary<string, MediaBrowser.Controller.Persistence.NextUpEpisodeBatchResult> GetNextUpEpisodesBatch(
+        InternalItemsQuery query,
+        IReadOnlyList<string> seriesKeys,
+        bool includeSpecials,
+        bool includeWatchedForRewatching)
     {
         throw new NotImplementedException();
     }
 
+    public QueryResult<BaseItem> GetItemsResult(InternalItemsQuery query)
+    {
+        if (ItemsResultQuery is not null) return ItemsResultQuery(query);
+        var items = GetItemList(query).OrderBy(item => item.Name, StringComparer.Ordinal).ToList();
+        return new QueryResult<BaseItem>(query.StartIndex, items.Count,
+            items.Skip(query.StartIndex ?? 0).Take(query.Limit ?? int.MaxValue).ToList());
+    }
+
     public bool IgnoreFile(FileSystemMetadata file, BaseItem parent)
+    {
+        throw new NotImplementedException();
+    }
+
+    public Guid GetPersonId(string name)
     {
         throw new NotImplementedException();
     }
@@ -495,6 +599,31 @@ public class MockedLibraryManager : ILibraryManager
         throw new NotImplementedException();
     }
 
+    public ItemCounts GetItemCountsForNameItem(BaseItemKind kind, Guid id, BaseItemKind[] relatedItemKinds, User? user)
+    {
+        throw new NotImplementedException();
+    }
+
+    public Dictionary<Guid, ItemCounts> GetItemCountsForNameItems(BaseItemKind kind, IReadOnlyList<Guid> ids, BaseItemKind[] relatedItemKinds, User? user)
+    {
+        throw new NotImplementedException();
+    }
+
+    public Dictionary<Guid, int> GetChildCountBatch(IReadOnlyList<Guid> parentIds, User? user)
+    {
+        throw new NotImplementedException();
+    }
+
+    public Dictionary<Guid, (int Played, int Total)> GetPlayedAndTotalCountBatch(IReadOnlyList<Guid> folderIds, User user)
+    {
+        throw new NotImplementedException();
+    }
+
+    public void ConfigureUserAccess(InternalItemsQuery query, User user)
+    {
+        throw new NotImplementedException();
+    }
+
     public Task RunMetadataSavers(BaseItem item, ItemUpdateType updateReason)
     {
         throw new NotImplementedException();
@@ -506,6 +635,31 @@ public class MockedLibraryManager : ILibraryManager
     }
 
     public void QueueLibraryScan()
+    {
+        throw new NotImplementedException();
+    }
+
+    public void CreateShortcut(string virtualFolderPath, MediaPathInfo pathInfo)
+    {
+        throw new NotImplementedException();
+    }
+
+    public Task RerouteLinkedChildReferencesAsync(Guid fromChildId, Guid toChildId)
+    {
+        throw new NotImplementedException();
+    }
+
+    public QueryFiltersLegacy GetQueryFiltersLegacy(InternalItemsQuery query)
+    {
+        throw new NotImplementedException();
+    }
+
+    public IReadOnlyList<string> GetMediaStreamLanguages(MediaStreamType mediaStreamType)
+    {
+        throw new NotImplementedException();
+    }
+
+    public IReadOnlyList<string> GetMediaStreamLanguages(MediaStreamType mediaStreamType, InternalItemsQuery query)
     {
         throw new NotImplementedException();
     }

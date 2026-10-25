@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.Bangumi.Configuration;
 using Jellyfin.Plugin.Bangumi.Model;
+using Jellyfin.Plugin.Bangumi.Utils;
 using MediaBrowser.Controller.Entities.Audio;
 using MediaBrowser.Controller.Providers;
 using MediaBrowser.Model.Entities;
@@ -105,7 +106,7 @@ public class AlbumProvider(BangumiApi api, Logger<AlbumProvider> log)
             result.Item.ProductionYear = int.Parse(subject.ProductionYear);
 
         var persons = await api.GetSubjectPersons(subject.Id, cancellationToken);
-        result.Item.AlbumArtists = persons?.Where(person => person.Type is 2 or 3).Select(person => person.Name).ToList();
+        result.Item.AlbumArtists = persons?.Where(person => person.Type is 1).Select(person => person.Name).Distinct().ToList();
 
         return result;
     }
@@ -124,7 +125,7 @@ public class AlbumProvider(BangumiApi api, Logger<AlbumProvider> log)
             {
                 Name = subject.Name,
                 SearchProviderName = subject.OriginalName,
-                ImageUrl = subject.DefaultImage,
+                ImageUrl = ImageUrlNormalizer.Normalize(subject.DefaultImage),
                 Overview = subject.Summary
             };
             if (DateTime.TryParse(subject.AirDate, out var airDate))
@@ -144,7 +145,7 @@ public class AlbumProvider(BangumiApi api, Logger<AlbumProvider> log)
                 {
                     Name = item.Name,
                     SearchProviderName = item.OriginalName,
-                    ImageUrl = item.DefaultImage,
+                    ImageUrl = ImageUrlNormalizer.Normalize(item.DefaultImage),
                     Overview = item.Summary
                 };
                 if (DateTime.TryParse(item.AirDate, out var airDate))

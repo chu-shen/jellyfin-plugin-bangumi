@@ -6,7 +6,9 @@ Jellyfin bgm.tv 数据源插件，用于拉取中文番剧信息及图片。
 
 支持将播放进度同步至 bgm.tv
 
-![后台配置](https://user-images.githubusercontent.com/2725379/158064318-98a82a79-a783-4552-abaa-af18724ad9bf.png)
+推荐使用 **JetBrains Rider** 进行开发与调试。打开 `Jellyfin.Plugin.Bangumi.sln`，完成环境准备后，即可使用仓库提供的运行配置启动和调试 Jellyfin。环境搭建、插件软链接及前端热重载步骤请参阅 [本地调试环境搭建](docs/本地调试环境.md)。
+
+![后台配置](https://github.com/user-attachments/assets/1d1bdfd9-a932-4bf5-9b0a-ec15a1aed3a0)
 
 # 下载
 
@@ -30,6 +32,14 @@ Jellyfin bgm.tv 数据源插件，用于拉取中文番剧信息及图片。
 
 安装后可在后台更新，推荐使用此方式安装
 
+## 普通用户绑定 Bangumi 账号（Jellyfin 12）
+
+依赖 File Transformation
+
+如需让普通用户在自己的 Jellyfin 设置中管理 Bangumi 授权，请先安装与当前 Jellyfin 版本兼容的 [File Transformation](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation)，重启服务器，然后在 Bangumi 插件的“账号”页开启“普通用户账号绑定入口”。此功能默认关闭，仅向 Jellyfin Web 注入入口，不修改 Web 文件，也不影响刮削和已有的播放同步。
+
+如果 File Transformation 缺失、不兼容或注册转换失败，开关不会开启；已启用后卸载该依赖，则在 Jellyfin 下次启动或状态检查时自动保存为关闭。普通用户只能管理自己的绑定，管理员仍可在插件页代管其他用户。
+
 ## 手动安装
 
 1. 下载插件 DLL 文件至 `Jellyfin 数据目录/Plugins/Bangumi`
@@ -43,3 +53,32 @@ Emby 版本的插件要求 4.9.0.33 及以上的版本，低于这个版本的�
 
 1. 下载插件 DLL 文件至 `Emby 数据目录/plugins/`
 2. 重新启动 Emby
+
+## 目录类型
+
+在插件的媒体库目录配置中选择 **Auto / 正片 / 特典**，或在视频所在目录的 `bangumi.ini` 中设置：
+
+```ini
+[Bangumi]
+Type=Normal
+```
+
+- `Auto`（默认，也可省略）：保留自动识别，支持同一目录混放正片与特典。
+- `Normal`：此目录中的剧集强制作为正片，使用非零季号。
+- `Special`：此目录中的剧集强制作为特典，使用第 0 季。
+
+强制模式优先于文件名、目录名、旧季号及 Bangumi 返回的类型；重新按所属条目和集号匹配，不沿用已保存的单集 ID（包括开启“信任已有 Bangumi ID”时）。同集号有多种类型时优先匹配配置的类型；没有对应类型时仍可使用其他类型的元数据，最终分类保持配置值。保存后刷新该目录的剧集元数据生效。配置只作用于 `bangumi.ini` 所在目录，不递归应用到子目录。
+
+## 按文件名覆盖配置
+
+可通过视频所在目录的 `bangumi.ini`，按文件名覆盖条目 ID、剧集偏移量等配置，暂不提供 Web UI 编辑入口。配置格式、匹配规则和示例请参阅 [Wiki：额外配置文件](https://github.com/kookxiang/jellyfin-plugin-bangumi/wiki/%E9%A2%9D%E5%A4%96%E9%85%8D%E7%BD%AE%E6%96%87%E4%BB%B6)，详细说明以 Wiki 为准。
+
+## 缺失与待播剧集（Jellyfin 12）
+
+在插件的「元数据」设置中开启「显示已播出的缺失剧集」或「显示待播剧集」，选择启用的媒体库并保存，再扫描媒体库。默认关闭；媒体库也需要启用 Bangumi 剧集元数据。客户端是否显示缺失/待播条目，还取决于客户端自身的显示设置。
+
+只使用已下载的离线数据库，不请求在线接口。仅导入 Bangumi 标记为正片、集号为整数且具有完整有效播出日期的剧集；小数集号、特别篇和日期未知的剧集跳过。当日及以后播出的条目由待播开关控制。离线数据缺失时保留已有占位，等待数据恢复。
+
+按已有季的 Bangumi ID 匹配；第一季可使用系列 ID，目录 `bangumi.ini` 的 `ID` 优先，`Offset`、`CorrectIndex`、`Skip` 和强制特典配置同样生效。不自动猜测或创建完全缺失的季。首次扫描尚未完成季映射和剧集刮削时，可能需要再次扫描。
+
+占位只保存元数据，没有媒体文件。重复扫描会更新已有占位，文件补齐后扫描会清理对应占位。关闭功能、取消选中媒体库或设置目录跳过后，下次扫描仅删除本功能标记的占位，不删除媒体文件或其他来源的虚拟剧集。关闭媒体库的 Bangumi 系列元数据源会阻止本功能运行，请先关闭本功能并扫描完成清理。

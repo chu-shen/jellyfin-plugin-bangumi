@@ -1,11 +1,9 @@
-
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.Bangumi.Model;
-using MediaBrowser.Controller.Library;
 
 namespace Jellyfin.Plugin.Bangumi.Parser.AnitomyParser;
 
@@ -15,6 +13,8 @@ public class AnitomyEpisodeParser : IEpisodeParser
     private readonly Logger<AnitomyEpisodeParser> _log;
     private readonly string _fileName;
     private readonly Anitomy _anitomy;
+    private const double MinMediaDurationMinutes = 10;   // 分钟
+    private const double MinMediaSizeMB = 100;   // MB
 
     public AnitomyEpisodeParser(EpisodeParserContext parserContext, Logger<AnitomyEpisodeParser> logger)
     {
@@ -32,10 +32,7 @@ public class AnitomyEpisodeParser : IEpisodeParser
         var (anitomyEpisodeType, bangumiEpisodeType) = GetEpisodeType();
         var episodeIndex = GetEpisodeIndex();
 
-        // 获取 seriesId
         var seriesId = LocalConfigurationHelper.GetSeriesId(_context.LocalConfiguration, _context.Info, _context.LibraryManager);
-        if (_context.Configuration.ProcessMultiSeasonFolderByAnitomySharp)
-            seriesId = await ProcessMultiSeasonFolder(seriesId);
 
         // 获取 episode
         try
@@ -44,10 +41,13 @@ public class AnitomyEpisodeParser : IEpisodeParser
             Episode? episode = await BasicRules(seriesId, episodeIndex, anitomyEpisodeType, bangumiEpisodeType);
 
             // 多季度规则
-            // 基础规则未匹配且为普通剧集
-            if (episode is null && (bangumiEpisodeType is EpisodeType.Normal || bangumiEpisodeType is null))
+            if (_context.Configuration.ProcessMultiSeasonWithConsecutiveIndexByAnitomySharp)
             {
-                episode = await ProcessMultiSeasonWithConsecutiveIndex(seriesId, episodeIndex);
+                // 基础规则未匹配且为普通剧集
+                if (episode is null && (bangumiEpisodeType is EpisodeType.Normal || bangumiEpisodeType is null))
+                {
+                    episode = await ProcessMultiSeasonWithConsecutiveIndex(seriesId, episodeIndex);
+                }
             }
 
             // 处理 episode 元数据
@@ -57,7 +57,12 @@ public class AnitomyEpisodeParser : IEpisodeParser
                 // 对于无标题的剧集，手动添加标题，而不是使用 Jellyfin 生成的标题
                 if (string.IsNullOrEmpty(episode.ChineseNameRaw) && string.IsNullOrEmpty(episode.OriginalNameRaw))
                 {
-                    episode.OriginalNameRaw = TitleOfSpecialEpisode(anitomyEpisodeType);
+                    episode.ChineseNameRaw = TitleOfSpecialEpisode(anitomyEpisodeType);
+                    episode.OriginalNameRaw = Path.GetFileNameWithoutExtension(_context.Info.Path);
+                }
+                if (double.TryParse(_anitomy.ExtractAnimeSeason(), out var sn))
+                {
+                    episode.SeasonNumber ??= sn;
                 }
                 return episode;
             }
@@ -67,9 +72,11 @@ public class AnitomyEpisodeParser : IEpisodeParser
             {
                 Type = bangumiEpisodeType ?? EpisodeType.Special,
                 Order = episodeIndex,
-                OriginalNameRaw = TitleOfSpecialEpisode(anitomyEpisodeType)
+                ChineseNameRaw = TitleOfSpecialEpisode(anitomyEpisodeType),
+                OriginalNameRaw = Path.GetFileNameWithoutExtension(_context.Info.Path),
+                SeasonNumber = 0
             };
-            _log.Info("Set OriginalName: {OriginalNameRaw} for {fileName}", sp.OriginalNameRaw, _fileName);
+            _log.Debug("Set ChineseName: {ChineseNameRaw} for {fileName}", sp.ChineseNameRaw, _fileName);
             return sp;
         }
         catch (InvalidOperationException e)
@@ -84,6 +91,9 @@ public class AnitomyEpisodeParser : IEpisodeParser
     /// </summary>
     private (string?, EpisodeType?) GetEpisodeType()
     {
+        if (_context.LocalConfiguration.GetForcedEpisodeType() is { } forcedType)
+            return (null, forcedType);
+
         var (anitomyEpisodeType, bangumiEpisodeType) = AnitomyEpisodeTypeMapping.GetAnitomyAndBangumiEpisodeType(_anitomy.ExtractAnimeType());
         _log.Debug("Bangumi episode type: {bangumiEpisodeType}", bangumiEpisodeType);
         // 判断文件夹/Jellyfin 季度是否为 Special
@@ -91,10 +101,11 @@ public class AnitomyEpisodeParser : IEpisodeParser
         {
             try
             {
-                string[] parent = [_context.LibraryManager.FindByPath(Path.GetDirectoryName(_context.Info.Path)!, true)!.Name];
+                var parentName = _context.LibraryManager.FindByPath(Path.GetDirectoryName(_context.Info.Path)!, true)!.Name;
+                var parentTypes = new Anitomy(parentName).ExtractAnimeType();
                 // #FIXME 路径类型，存在误判的可能性
-                (anitomyEpisodeType, bangumiEpisodeType) = AnitomyEpisodeTypeMapping.GetAnitomyAndBangumiEpisodeType(parent);
-                _log.Debug("Jellyfin parent name: {parent}. Path type: {type}", parent, anitomyEpisodeType);
+                (anitomyEpisodeType, bangumiEpisodeType) = AnitomyEpisodeTypeMapping.GetAnitomyAndBangumiEpisodeType(parentTypes ?? [parentName]);
+                _log.Debug("Jellyfin parent name: {parent}. Path type: {type}", parentName, anitomyEpisodeType);
             }
             catch (Exception e)
             {
@@ -130,8 +141,9 @@ public class AnitomyEpisodeParser : IEpisodeParser
     /// 获取剧集索引
     /// </summary>
     /// <returns></returns>
-    private double GetEpisodeIndex()
+    public double GetEpisodeIndex()
     {
+        var (_, bangumiEpisodeType) = GetEpisodeType();
         double episodeIndex = 0;
         var anitomyIndex = _anitomy.ExtractEpisodeNumber();
 
@@ -140,40 +152,78 @@ public class AnitomyEpisodeParser : IEpisodeParser
         {
             episodeIndex = parsedIndex;
         }
-        else if (_context.Configuration.MovieEpisodeDetectionByAnitomySharp)
+        else if (_context.Configuration.MovieEpisodeDetectionByAnitomySharp
+                && (bangumiEpisodeType is null or EpisodeType.Normal or EpisodeType.Special))
         {
-            const double MIN_MEDIA_TIME = 10;   // 分钟
-            const double MIN_MEDIA_SIZE = 100;   // MB
-            var mediaSourceInfo = _context.MediaSourceManager.GetStaticMediaSources(_context.LibraryManager.FindByPath(_context.Info.Path, false), false)?[0];
-            if (mediaSourceInfo != null)
+            if (TryDetectMovieEpisodeIndex(out var movieEpisodeIndex))
             {
-                // 视频时长（分钟）
-                double mediaTime = TimeSpan.FromTicks(mediaSourceInfo.RunTimeTicks ?? 0).TotalMinutes;
-                // 文件大小（MB）
-                double mediaSize = (mediaSourceInfo.Size ?? 0) / (1024 * 1024d);
-                _log.Debug("Media time: {mediaTime} minutes, Media size: {mediaSize} MB", mediaTime, mediaSize);
-                if (mediaTime > MIN_MEDIA_TIME && mediaSize > MIN_MEDIA_SIZE)
-                {
-                    // 当媒体库中节目和电影混合时，可辅助电影剧集匹配到元数据
-                    // 媒体文件时长大于 100 分钟，大小大于 100MB 的可能是 Movie 等类型
-                    // 存在误判的可能性，导致被识别为第一集。配合 SP 文件夹判断可降低误判的副作用
-                    episodeIndex = 1;
-                    _log.Debug("Use episode number: {episodeIndex} for {fileName}, because file size is {size} MB", episodeIndex, _fileName, mediaSize);
-                }
+                episodeIndex = movieEpisodeIndex;
             }
         }
 
-        var (_, bangumiEpisodeType) = GetEpisodeType();
         // 特典剧集不应用本地配置的偏移值
         var shouldApplyEpisodeOffset = bangumiEpisodeType is null or EpisodeType.Normal;
         if (shouldApplyEpisodeOffset)
         {
-            LocalConfigurationHelper.ApplyEpisodeOffset(ref episodeIndex, _context.LocalConfiguration);
+            LocalConfigurationHelper.ApplyEpisodeOffset(ref episodeIndex, _context.LocalConfiguration, _context.Info.Path);
         }
 
-        _log.Info("Use episode number: {episodeIndex} for {fileName}", episodeIndex, _fileName);
+        _log.Debug("Use episode number: {episodeIndex} for {fileName}", episodeIndex, _fileName);
 
         return episodeIndex;
+    }
+
+    /// <summary>
+    /// 尝试通过媒体信息检测是否为电影（返回剧集索引 1）
+    /// </summary>
+    private bool TryDetectMovieEpisodeIndex(out double episodeIndex)
+    {
+        episodeIndex = 0;
+
+        var mediaItem = _context.LibraryManager.FindByPath(_context.Info.Path, false);
+        if (mediaItem is null)
+        {
+            _log.Warn("Cannot find library item by path: {path}, skip movie episode detection", _context.Info.Path);
+            return false;
+        }
+        try
+        {
+            var mediaSources = _context.MediaSourceManager.GetStaticMediaSources(mediaItem, false);
+
+            if (mediaSources is null || mediaSources.Count == 0)
+            {
+                _log.Warn("No media source info found for {Path}, skip movie episode detection", _context.Info.Path);
+                return false;
+            }
+
+            var mediaSourceInfo = mediaSources[0];
+            // 新入库文件在媒体信息提取完成前 RunTimeTicks 可能为 null
+            if (mediaSourceInfo.RunTimeTicks is not long ticks || ticks <= 0)
+            {
+                _log.Warn("RunTimeTicks is not available for {Path}. Media info may not be parsed yet, skip movie episode detection", _context.Info.Path);
+                return false;
+            }
+
+            // 视频时长（分钟）
+            double mediaMinutes = TimeSpan.FromTicks(ticks).TotalMinutes;
+            // 文件大小（MB）
+            double mediaMB = (mediaSourceInfo.Size ?? 0) / (1024 * 1024d);
+            _log.Debug("Media time: {mediaTime} minutes, Media size: {mediaSize} MB", mediaMinutes, mediaMB);
+            if (mediaMinutes > MinMediaDurationMinutes && mediaMB > MinMediaSizeMB)
+            {
+                // 当媒体库中节目和电影混合时，可辅助电影剧集匹配到元数据
+                // 媒体文件时长大于 10 分钟，大小大于 100MB 的可能是 Movie 等类型
+                // 存在误判的可能性，导致被识别为第一集。配合 SP 文件夹判断可降低误判的副作用
+                episodeIndex = 1;
+                _log.Debug("Use episode number: {episodeIndex} for {fileName}, because file size is {size} MB", episodeIndex, _fileName, mediaMB);
+                return true;
+            }
+        }
+        catch (Exception e)
+        {
+            _log.Warn("Failed to get media source info for {path}, skip movie episode detection. {Message}", _context.Info.Path, e.Message);
+        }
+        return false;
     }
 
     /// <summary>
@@ -186,6 +236,12 @@ public class AnitomyEpisodeParser : IEpisodeParser
     /// <returns></returns>
     private async Task<Episode?> BasicRules(int seriesId, double episodeIndex, string? anitomyEpisodeType, EpisodeType? bangumiEpisodeType)
     {
+        if (_context.LocalConfiguration.GetForcedEpisodeType() is { } forcedType)
+        {
+            var episodes = await _context.Api.GetSubjectEpisodeList(seriesId, null, episodeIndex, _context.Token);
+            return episodes == null ? null : LocalConfigurationHelper.MatchDirectoryEpisode(episodes, forcedType, episodeIndex);
+        }
+
         // 获取剧集元数据
         var episodeListData = await _context.Api.GetSubjectEpisodeList(seriesId, bangumiEpisodeType, episodeIndex, _context.Token) ?? new List<Episode>();
 
@@ -233,6 +289,18 @@ public class AnitomyEpisodeParser : IEpisodeParser
     /// <returns></returns>
     private async Task<Episode?> ProcessMultiSeasonWithConsecutiveIndex(int seriesId, double episodeIndex)
     {
+        // 限制运用范围
+        // 检查 seriesId 是否为第一季，不然容易错位
+        // FIXME 存在续集先出，前传后出的情况，这里只能先忽略
+        var checkSeriesRelation = await _context.Api.GetRelatedSubjects(seriesId, _context.Token);
+        if (checkSeriesRelation is null)
+            return null;
+        if (checkSeriesRelation.Any(r => r.Type == SubjectType.Anime && r.Relation == SubjectRelation.Prequel))
+        {
+            _log.Info("ProcessMultiSeasonWithConsecutiveIndex, Not first season, skip");
+            return null;
+        }
+
         var episodeIndexAlt = double.Parse(_anitomy.ExtractEpisodeNumberAlt() ?? "-1");
         // 获取剧集元数据
         var episodeListData = await _context.Api.GetSubjectEpisodeList(seriesId, EpisodeType.Normal, episodeIndex, _context.Token) ?? new List<Episode>();
@@ -245,12 +313,12 @@ nextSeason:
         var results = await _context.Api.GetRelatedSubjects(seriesId, _context.Token);
         if (results is null)
             return null;
-        foreach (var result in results)
+        foreach (var result in results.Where(r => r.Type == SubjectType.Anime))
         {
             if (result.Relation == SubjectRelation.Sequel)
             {
                 subjectId = result.Id;
-                _log.Info("use sequel: {sequel} for episode", subjectId);
+                _log.Info("Use sequel: {sequel} for episode", subjectId);
                 break;
             }
         }
@@ -306,65 +374,6 @@ nextSeason:
         }
 
         return episode;
-    }
-
-    /// <summary>
-    /// 处理多季度文件夹
-    /// 根据文件夹名称搜索，或者使用已存在的 id 
-    /// 另外，推荐同时修改季度值
-    /// #FIXME 效果一般
-    /// </summary>
-    /// <param name="seriesId"></param>
-    /// <returns></returns>
-    private async Task<int> ProcessMultiSeasonFolder(int seriesId)
-    {
-        // 使用此媒体文件的父目录获取名称
-        var parent = _context.LibraryManager.FindByPath(Path.GetDirectoryName(_context.Info.Path)!, true);
-        _log.Debug("Jellyfin parent name: {parent}", parent);
-
-        // 配置可跳过处理的文件夹名称
-        var skipFolders = new HashSet<string>(
-            AnitomyEpisodeTypeMapping.SpecialOther,
-            StringComparer.OrdinalIgnoreCase
-        );
-        skipFolders.UnionWith(["CDs", "Scans", "Bonus"]);
-        // 检查是否应跳过处理
-        bool shouldSkipFolder = skipFolders.Contains(parent!.Name, StringComparer.OrdinalIgnoreCase) ||
-                          parent.Name.Contains('第', StringComparison.OrdinalIgnoreCase) ||
-                          parent.Name.Contains("SEASON", StringComparison.OrdinalIgnoreCase);
-        if (shouldSkipFolder) return seriesId;
-
-        // 如果在 Jellyfin 中已配置，则直接返回此配置值
-        var subjectId = 0;
-        _ = int.TryParse(parent.ProviderIds.GetOrDefault(Constants.ProviderName), out subjectId);
-        if (subjectId > 0)
-        {
-            _log.Info("Multi season folder, use exist id: {subjectId}", subjectId);
-            return subjectId;
-        }
-
-        // 搜索
-        var anitomyParent = new Anitomy(parent.Name);
-        var searchName = anitomyParent.ExtractAnimeTitle();
-        if (searchName is null) return seriesId;
-        _log.Info("Multi season folder, Searching {Name} in bgm.tv", searchName);
-        var searchResult = await _context.Api.SearchSubject(searchName, _context.Token);
-        var animeYear = anitomyParent.ExtractAnimeYear();
-        if (animeYear != null)
-            searchResult = searchResult.Where(x => x.ProductionYear == animeYear);
-        if (searchResult.Any())
-        {
-            subjectId = searchResult.First().Id;
-            _log.Debug("Multi season folder, Use subject id: {id}", subjectId);
-
-            parent.ProviderIds.Add(Constants.ProviderName, subjectId.ToString());
-            await _context.LibraryManager.UpdateItemAsync(parent, parent, ItemUpdateType.MetadataEdit, _context.Token);
-
-            // #FIXME 检查与旧 seriesId 的关联性，如果无联系则说明可能匹配错误
-            return subjectId;
-        }
-
-        return seriesId;
     }
 
 }

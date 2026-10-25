@@ -25,15 +25,16 @@ public class ExternalUrlProvider : IExternalUrlProvider
             case Movie:
             case Series:
             case Season:
-                yield return $"https://bgm.tv/subject/{id}";
+            case BoxSet:
+                yield return $"{BangumiApi.BaseWebsiteUrl}/subject/{id}";
                 break;
             case Audio:
             case Episode:
-                yield return $"https://bgm.tv/ep/{id}";
+                yield return $"{BangumiApi.BaseWebsiteUrl}/ep/{id}";
                 break;
             case Person:
             case MusicArtist:
-                yield return $"https://bgm.tv/person/{id}";
+                yield return $"{BangumiApi.BaseWebsiteUrl}/person/{id}";
                 break;
             default:
                 yield break;

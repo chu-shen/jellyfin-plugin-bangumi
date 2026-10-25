@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
@@ -9,6 +10,8 @@ using Jellyfin.Plugin.Bangumi.Model;
 using Jellyfin.Plugin.Bangumi.Parser;
 using Jellyfin.Plugin.Bangumi.Parser.AnitomyParser;
 using Jellyfin.Plugin.Bangumi.Parser.BasicParser;
+using Jellyfin.Plugin.Bangumi.Parser.TorrentParser;
+using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Providers;
@@ -17,7 +20,7 @@ using Episode = MediaBrowser.Controller.Entities.TV.Episode;
 
 namespace Jellyfin.Plugin.Bangumi.Providers;
 
-public class EpisodeProvider(BangumiApi api, Logger<EpisodeProvider> log, ILibraryManager libraryManager, IMediaSourceManager mediaSourceManager, Logger<AnitomyEpisodeParser> anitomyLogger, Logger<BasicEpisodeParser> basicLogger)
+public class EpisodeProvider(BangumiApi api, Logger<EpisodeProvider> log, ILibraryManager libraryManager, IMediaSourceManager mediaSourceManager, Logger<AnitomyEpisodeParser> anitomyLogger, Logger<BasicEpisodeParser> basicLogger, Logger<TorrentEpisodeParser> torrentLogger)
     : IRemoteMetadataProvider<Episode, EpisodeInfo>, IHasOrder
 {
     private static PluginConfiguration Configuration => Plugin.Instance!.Configuration;
@@ -28,17 +31,26 @@ public class EpisodeProvider(BangumiApi api, Logger<EpisodeProvider> log, ILibra
     public async Task<MetadataResult<Episode>> GetMetadata(EpisodeInfo info, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        // Virtual episodes are maintained from the archive by MissingEpisodeProvider.
+        // They have no file to parse and must never trigger an online metadata fallback.
+        if (string.IsNullOrEmpty(info.Path))
+            return new MetadataResult<Episode> { ResultLanguage = Constants.Language };
+
+        using var refreshScope = BangumiApi.BeginRequestedRefresh(info.Path);
         var localConfiguration = await LocalConfiguration.ForPath(info.Path);
 
         var context = new EpisodeParserContext(api, libraryManager, info, mediaSourceManager, Configuration, localConfiguration, cancellationToken);
-        var parser = EpisodeParserFactory.CreateParser(Configuration, context, anitomyLogger, basicLogger);
+        var parser = EpisodeParserFactory.CreateParser(Configuration, context, anitomyLogger, basicLogger, torrentLogger);
 
         Model.Episode? episode = null;
 
         // throw execption will cause the episode to not show up anywhere
         try
         {
-            episode = await parser.GetEpisode();
+            episode = BangumiApi.IsFreshMetadataRefresh
+                && int.TryParse(info.ProviderIds?.GetValueOrDefault(Constants.ProviderName), out var savedId) && savedId > 0
+                ? await api.GetEpisode(savedId, cancellationToken)
+                : await parser.GetEpisode();
 
             log.Info("metadata for {FilePath}: {EpisodeInfo}", Path.GetFileName(info.Path), episode);
         }
@@ -51,10 +63,21 @@ public class EpisodeProvider(BangumiApi api, Logger<EpisodeProvider> log, ILibra
 
         if (localConfiguration.Skip) return result;
 
+        var forcedType = localConfiguration.GetForcedEpisodeType();
+        var parent = libraryManager.FindByPath(Path.GetDirectoryName(info.Path)!, true);
+
         if (episode == null)
         {
             // remove season number
-            if (BasicEpisodeParser.IsSpecial(info.Path, context.LibraryManager, true))
+            if (forcedType != null)
+            {
+                result.HasMetadata = true;
+                result.Item = new Episode
+                {
+                    ParentIndexNumber = (await ResolveSeasonNumberAsync(episode, parent, info, forcedType, localConfiguration, cancellationToken)).seasonNumber
+                };
+            }
+            else if (BasicEpisodeParser.IsSpecial(info.Path, context.LibraryManager, true))
             {
                 result.HasMetadata = true;
                 result.Item = new Episode { ParentIndexNumber = 0 };
@@ -65,8 +88,6 @@ public class EpisodeProvider(BangumiApi api, Logger<EpisodeProvider> log, ILibra
 
         result.Item = new Episode();
         result.HasMetadata = true;
-
-        // 去掉默认值 0，仅添加有效剧集 ID
         if (episode.Id != 0)
             result.Item.ProviderIds.Add(Constants.ProviderName, $"{episode.Id}");
 
@@ -75,51 +96,129 @@ public class EpisodeProvider(BangumiApi api, Logger<EpisodeProvider> log, ILibra
         if (episode.AirDate.Length == 4)
             result.Item.ProductionYear = int.Parse(episode.AirDate);
 
-        var parent = libraryManager.FindByPath(Path.GetDirectoryName(info.Path)!, true);
-
         result.Item.Name = episode.Name;
         result.Item.OriginalTitle = episode.OriginalName;
-        result.Item.IndexNumber = localConfiguration.CorrectIndex ?
-            (int)episode.Order :
-            (int)episode.Order + localConfiguration.Offset;
+        result.Item.IndexNumber = LocalConfigurationHelper.GetDisplayEpisodeIndex(episode.Order, localConfiguration, info.Path);
         result.Item.Overview = string.IsNullOrEmpty(episode.Description) ? null : episode.Description;
-        result.Item.ParentIndexNumber = parent is Series ? 1 : info.ParentIndexNumber ?? 1;
 
-        if (BasicEpisodeParser.IsSpecial(info.Path, context.LibraryManager, true) || episode.Type == EpisodeType.Special || (parent is not Series && info.ParentIndexNumber == 0))
-        {
-            result.Item.ParentIndexNumber = 0;
-        }
-        else if (parent is Season season)
-        {
-            result.Item.SeasonId = season.Id;
-            if (season.IndexNumber != null)
-                result.Item.ParentIndexNumber = season.IndexNumber;
-        }
+        var (seasonNumber, seasonId) = await ResolveSeasonNumberAsync(episode, parent, info, forcedType, localConfiguration, cancellationToken);
+        result.Item.ParentIndexNumber = seasonNumber;
+        if (seasonId != Guid.Empty) result.Item.SeasonId = seasonId;
 
-        if (episode.Type == EpisodeType.Normal && result.Item.ParentIndexNumber > 0)
+        if (result.Item.ParentIndexNumber > 0)
+        {
+            FillFallbackTitle(result.Item);
             return result;
-
-        // mark episode as special
-        result.Item.ParentIndexNumber = 0;
+        }
 
         // use title and overview from special episode subject if episode data is empty
         var series = await api.GetSubject(episode.ParentId, cancellationToken);
         if (series == null)
+        {
+            FillFallbackTitle(result.Item);
             return result;
+        }
 
-        // use title from special episode subject if episode data is empty
-        if (string.IsNullOrEmpty(result.Item.Name))
-            result.Item.Name = series.Name;
-        if (string.IsNullOrEmpty(result.Item.OriginalTitle))
-            result.Item.OriginalTitle = series.OriginalName;
+        if (string.IsNullOrEmpty(result.Item.Name) || string.IsNullOrEmpty(result.Item.OriginalTitle) || string.IsNullOrEmpty(result.Item.Overview))
+        {
+            var episodes = await api.GetSubjectEpisodeList(episode.ParentId, null, episode.Order, cancellationToken);
+            if (episodes?.Take(2).Count() == 1)
+            {
+                if (string.IsNullOrEmpty(result.Item.Name))
+                    result.Item.Name = series.Name;
+                if (string.IsNullOrEmpty(result.Item.OriginalTitle))
+                    result.Item.OriginalTitle = series.OriginalName;
+                if (string.IsNullOrEmpty(result.Item.Overview))
+                    result.Item.Overview = series.Summary;
+            }
+        }
 
-        var seasonNumber = parent is Season ? parent.IndexNumber : 1;
+        FillFallbackTitle(result.Item);
+
+        var airSeasonNumber = parent is Season ? parent.IndexNumber : 1;
         if (!string.IsNullOrEmpty(episode.AirDate) && string.Compare(episode.AirDate, series.AirDate, StringComparison.Ordinal) < 0)
-            result.Item.AirsBeforeEpisodeNumber = seasonNumber;
+            result.Item.AirsBeforeSeasonNumber = airSeasonNumber;
         else
-            result.Item.AirsAfterSeasonNumber = seasonNumber;
+            result.Item.AirsAfterSeasonNumber = airSeasonNumber;
+
+        if (episode.Order % 1 != 0)
+            result.Item.AirsBeforeEpisodeNumber = (int)Math.Ceiling(episode.Order);
 
         return result;
+
+        void FillFallbackTitle(Episode item)
+        {
+            if (string.IsNullOrEmpty(item.Name))
+                item.Name = Path.GetFileNameWithoutExtension(info.Path);
+            if (string.IsNullOrEmpty(item.OriginalTitle))
+                item.OriginalTitle = Path.GetFileNameWithoutExtension(info.Path);
+        }
+    }
+
+    private async Task<(int seasonNumber, Guid seasonId)> ResolveSeasonNumberAsync(
+    Model.Episode? episode,
+    BaseItem? parent,
+    EpisodeInfo info,
+    EpisodeType? forcedType,
+    LocalConfiguration localConfiguration,
+    CancellationToken token)
+    {
+        // forcedType
+        if (forcedType == EpisodeType.Special)
+            return (0, Guid.Empty);
+        if (forcedType == EpisodeType.Normal)
+            return GetNormalSeasonNumber();
+
+        // 特典
+        if (episode?.SeasonNumber == 0)
+            return (0, Guid.Empty);
+
+        // special
+        var isNormal = (forcedType ?? episode?.Type) == EpisodeType.Normal;
+        if (!isNormal
+            || episode?.Type == EpisodeType.Special
+            || BasicEpisodeParser.IsSpecial(info.Path, libraryManager, true)
+            || (parent is not Series && info.ParentIndexNumber == 0))
+            return (0, Guid.Empty);
+
+        // parent is Season
+        if (parent is Season { IndexNumber: not null } season)
+            return (season.IndexNumber!.Value, season.Id);
+
+        // relation chain
+        var seriesId = episode is { ParentId: > 0 }
+            ? episode.ParentId
+            : LocalConfigurationHelper.GetSeriesId(localConfiguration, info, libraryManager);
+        if (Configuration.UseBangumiRelationChainForEpisodeSeasonNumber && seriesId > 0)
+        {
+            try
+            {
+                var chain = await api.GetPrequelChainSubjectIds(seriesId, token);
+                if (chain.Count > 0) return (chain.Count, Guid.Empty);
+            }
+            catch (Exception ex) when (!token.IsCancellationRequested)
+            {
+                // Fall back to the parser and existing season number if inference fails.
+                log.Warn("Failed to infer episode season number for subject {SubjectId}: {Error}", seriesId, ex.Message);
+            }
+        }
+
+        // parser result
+        if (episode?.SeasonNumber is not null)
+            return ((int)episode.SeasonNumber.Value, Guid.Empty);
+
+        // normal
+        return (parent is Series ? 1 : (info.ParentIndexNumber ?? 1), Guid.Empty);
+
+
+        (int, Guid) GetNormalSeasonNumber()
+        {
+            if (parent is Season { IndexNumber: > 0 } season)
+                return (season.IndexNumber.GetValueOrDefault(1), season.Id);
+            if (episode?.SeasonNumber > 0)
+                return (Math.Max(1, (int)episode.SeasonNumber.Value), Guid.Empty);
+            return (info.ParentIndexNumber > 0 ? info.ParentIndexNumber.Value : 1, Guid.Empty);
+        }
     }
 
     public Task<IEnumerable<RemoteSearchResult>> GetSearchResults(EpisodeInfo searchInfo, CancellationToken cancellationToken)
