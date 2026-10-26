@@ -1,0 +1,32 @@
+using System;
+using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace Jellyfin.Plugin.Bangumi.Utils;
+
+internal static class SeasonNumberHelper
+{
+    /// <summary>
+    /// 用 Bangumi 前传链推断季号：链里必须包含 Jellyfin 系列根条目，
+    /// 否则说明是不同世界观、不同演绎、番外/总集篇，季度可能冲突，返回 null。
+    /// </summary>
+    public static async Task<int?> TryResolveChainSeasonNumberAsync(
+        BangumiApi api,
+        int subjectId,
+        IReadOnlyDictionary<string, string>? seriesProviderIds,
+        CancellationToken token)
+    {
+        if (subjectId <= 0) return null;
+        try
+        {
+            var jellyfinSeriesId = int.TryParse(seriesProviderIds?.GetValueOrDefault(Constants.ProviderName), out var id) ? id : 0;
+            var chain = await api.GetPrequelChainSubjectIds(subjectId, token);
+            return chain.Contains(jellyfinSeriesId) ? chain.Count : null;
+        }
+        catch (Exception) when (!token.IsCancellationRequested)
+        {
+            return null;
+        }
+    }
+}

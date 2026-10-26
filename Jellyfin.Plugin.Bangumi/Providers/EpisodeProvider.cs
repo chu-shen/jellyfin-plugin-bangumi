@@ -105,17 +105,21 @@ public class EpisodeProvider(BangumiApi api, Logger<EpisodeProvider> log, ILibra
         result.Item.ParentIndexNumber = seasonNumber;
         if (seasonId != Guid.Empty) result.Item.SeasonId = seasonId;
 
-        if (result.Item.ParentIndexNumber > 0)
+        if (result.Item.ParentIndexNumber is not 0)
         {
-            FillFallbackTitle(result.Item);
+            FillFallbackTitle(result.Item, info);
             return result;
         }
 
         // use title and overview from special episode subject if episode data is empty
         var series = await api.GetSubject(episode.ParentId, cancellationToken);
+
+        // 特典一般没有 Bangumi 剧集数据 ⇒ episode.ParentId 是空的，只能从本地配置/系列条目上取。
+        var episodeSeriesId = series is not null ? series.Id : LocalConfigurationHelper.GetSeriesId(localConfiguration, info, libraryManager);
+
         if (series == null)
         {
-            FillFallbackTitle(result.Item);
+            FillFallbackTitle(result.Item, info);
             return result;
         }
 
@@ -133,10 +137,13 @@ public class EpisodeProvider(BangumiApi api, Logger<EpisodeProvider> log, ILibra
             }
         }
 
-        FillFallbackTitle(result.Item);
 
         var airSeasonNumber = parent is Season ? parent.IndexNumber : 1;
-        if (!string.IsNullOrEmpty(episode.AirDate) && string.Compare(episode.AirDate, series.AirDate, StringComparison.Ordinal) < 0)
+        if (Configuration.UseBangumiRelationChainForEpisodeSeasonNumber && await SeasonNumberHelper.TryResolveChainSeasonNumberAsync(api, episodeSeriesId, info.SeriesProviderIds, cancellationToken) is { } chainSeasonNumber)
+            airSeasonNumber = chainSeasonNumber;
+        DateTime? episodeAirDate = DateTime.TryParse(episode.AirDate, out var ead) ? ead : null;
+        DateTime? seriesAirDate = DateTime.TryParse(series.AirDate, out var sad) ? sad : null;
+        if (episodeAirDate < seriesAirDate || episodeAirDate < series.EndDate)
             result.Item.AirsBeforeSeasonNumber = airSeasonNumber;
         else
             result.Item.AirsAfterSeasonNumber = airSeasonNumber;
@@ -144,18 +151,19 @@ public class EpisodeProvider(BangumiApi api, Logger<EpisodeProvider> log, ILibra
         if (episode.Order % 1 != 0)
             result.Item.AirsBeforeEpisodeNumber = (int)Math.Ceiling(episode.Order);
 
-        return result;
+        FillFallbackTitle(result.Item, info);
 
-        void FillFallbackTitle(Episode item)
-        {
-            if (string.IsNullOrEmpty(item.Name))
-                item.Name = Path.GetFileNameWithoutExtension(info.Path);
-            if (string.IsNullOrEmpty(item.OriginalTitle))
-                item.OriginalTitle = Path.GetFileNameWithoutExtension(info.Path);
-        }
+        return result;
     }
 
-    private async Task<(int seasonNumber, Guid seasonId)> ResolveSeasonNumberAsync(
+    private static void FillFallbackTitle(Episode item, EpisodeInfo info)
+    {
+        if (string.IsNullOrEmpty(item.Name))
+            item.Name = Path.GetFileNameWithoutExtension(info.Path);
+        if (string.IsNullOrEmpty(item.OriginalTitle))
+            item.OriginalTitle = Path.GetFileNameWithoutExtension(info.Path);
+    }
+    private async Task<(int? seasonNumber, Guid seasonId)> ResolveSeasonNumberAsync(
     Model.Episode? episode,
     BaseItem? parent,
     EpisodeInfo info,
@@ -177,8 +185,7 @@ public class EpisodeProvider(BangumiApi api, Logger<EpisodeProvider> log, ILibra
         var isNormal = (forcedType ?? episode?.Type) == EpisodeType.Normal;
         if (!isNormal
             || episode?.Type == EpisodeType.Special
-            || BasicEpisodeParser.IsSpecial(info.Path, libraryManager, true)
-            || (parent is not Series && info.ParentIndexNumber == 0))
+            || BasicEpisodeParser.IsSpecial(info.Path, libraryManager, true))
             return (0, Guid.Empty);
 
         // parent is Season
@@ -189,27 +196,20 @@ public class EpisodeProvider(BangumiApi api, Logger<EpisodeProvider> log, ILibra
         var seriesId = episode is { ParentId: > 0 }
             ? episode.ParentId
             : LocalConfigurationHelper.GetSeriesId(localConfiguration, info, libraryManager);
-        if (Configuration.UseBangumiRelationChainForEpisodeSeasonNumber && seriesId > 0)
-        {
-            try
-            {
-                var chain = await api.GetPrequelChainSubjectIds(seriesId, token);
-                if (chain.Count > 0) return (chain.Count, Guid.Empty);
-            }
-            catch (Exception ex) when (!token.IsCancellationRequested)
-            {
-                // Fall back to the parser and existing season number if inference fails.
-                log.Warn("Failed to infer episode season number for subject {SubjectId}: {Error}", seriesId, ex.Message);
-            }
-        }
+        if (Configuration.UseBangumiRelationChainForEpisodeSeasonNumber
+            && await SeasonNumberHelper.TryResolveChainSeasonNumberAsync(api, seriesId, info.SeriesProviderIds, token) is { } chainSeasonNumber)
+            return (chainSeasonNumber, Guid.Empty);
 
         // parser result
         if (episode?.SeasonNumber is not null)
             return ((int)episode.SeasonNumber.Value, Guid.Empty);
 
-        // normal
-        return (parent is Series ? 1 : (info.ParentIndexNumber ?? 1), Guid.Empty);
+        // season default: null
+        if (parent is Season)
+            return (info.ParentIndexNumber is > 0 ? info.ParentIndexNumber.Value : (int?)null, parent.Id);
 
+        // normal
+        return (parent is Series ? 1 : (info.ParentIndexNumber is > 0 ? info.ParentIndexNumber.Value : 1), Guid.Empty);
 
         (int, Guid) GetNormalSeasonNumber()
         {

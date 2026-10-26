@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using Jellyfin.Plugin.Bangumi.Configuration;
 using Jellyfin.Plugin.Bangumi.Model;
 using Jellyfin.Plugin.Bangumi.Parser.AnitomyParser;
+using Jellyfin.Plugin.Bangumi.Utils;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Providers;
@@ -156,16 +157,15 @@ public class SeasonProvider(BangumiApi api, Logger<SeasonProvider> log, ILibrary
         }
         else if (Configuration.UseBangumiRelationChainForSeasonNumber)
         {
-            try
+
+            if (await SeasonNumberHelper.TryResolveChainSeasonNumberAsync(api, subjectId, info.SeriesProviderIds, cancellationToken) is { } n)
             {
-                var chain = await api.GetPrequelChainSubjectIds(subjectId, cancellationToken);
-                result.Item.IndexNumber = chain.Count;
-                log.Info("Use chain Season {seasonNumber} for {parent}", chain.Count, seasonPath);
+                result.Item.IndexNumber = n;
+                log.Info("Use chain Season {seasonNumber} for {parent}", n, seasonPath);
             }
-            catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+            else
             {
-                // Season inference is optional; keep the metadata already fetched.
-                log.Warn("Failed to infer season number for subject {SubjectId}: {Error}", subjectId, ex.Message);
+                log.Warn("Skip season inference for {parent}: series subject is not in chain of {SubjectId}", seasonPath, subjectId);
             }
         }
 
