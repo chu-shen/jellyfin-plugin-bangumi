@@ -158,7 +158,7 @@ public class SeasonProvider(BangumiApi api, Logger<SeasonProvider> log, ILibrary
         else if (Configuration.UseBangumiRelationChainForSeasonNumber)
         {
 
-            if (await SeasonNumberHelper.TryResolveChainSeasonNumberAsync(api, subjectId, info.SeriesProviderIds, cancellationToken) is { } n)
+            if (await SeasonNumberHelper.TryResolveChainSeasonNumberAsync(api, subjectId, info.SeriesProviderIds, log, cancellationToken) is { } n)
             {
                 result.Item.IndexNumber = n;
                 log.Info("Use chain Season {seasonNumber} for {parent}", n, seasonPath);
