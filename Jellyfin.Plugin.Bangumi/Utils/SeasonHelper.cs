@@ -21,6 +21,8 @@ internal static class SeasonNumberHelper
         try
         {
             var jellyfinSeriesId = int.TryParse(seriesProviderIds?.GetValueOrDefault(Constants.ProviderName), out var id) ? id : 0;
+            if (jellyfinSeriesId <= 0) return null;
+
             var chain = await api.GetPrequelChainSubjectIds(subjectId, token);
             return chain.Contains(jellyfinSeriesId) ? chain.Count : null;
         }

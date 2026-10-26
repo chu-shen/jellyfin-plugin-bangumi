@@ -11,6 +11,7 @@ using Jellyfin.Plugin.Bangumi.Parser;
 using Jellyfin.Plugin.Bangumi.Parser.AnitomyParser;
 using Jellyfin.Plugin.Bangumi.Parser.BasicParser;
 using Jellyfin.Plugin.Bangumi.Parser.TorrentParser;
+using Jellyfin.Plugin.Bangumi.Utils;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
