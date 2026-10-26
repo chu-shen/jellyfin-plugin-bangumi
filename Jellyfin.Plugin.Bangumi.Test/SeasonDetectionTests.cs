@@ -193,9 +193,7 @@ public class SeasonDetectionTests
     private EpisodeProvider CreateEpisodeProvider(BangumiApi api) => new(api,
         ServiceLocator.GetService<Logger<EpisodeProvider>>(), _library,
         ServiceLocator.GetService<IMediaSourceManager>(),
-        ServiceLocator.GetService<Logger<AnitomyEpisodeParser>>(),
-        ServiceLocator.GetService<Logger<BasicEpisodeParser>>(),
-        ServiceLocator.GetService<Logger<TorrentEpisodeParser>>());
+        ServiceLocator.GetService<ILoggerFactory>());
 
     public enum RelationFailure { Http, Timeout, InvalidJson, Cancel }
 
