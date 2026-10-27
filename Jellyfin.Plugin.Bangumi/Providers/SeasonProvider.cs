@@ -158,14 +158,10 @@ public class SeasonProvider(BangumiApi api, Logger<SeasonProvider> log, ILibrary
         else if (Configuration.UseBangumiRelationChainForSeasonNumber)
         {
 
-            if (await SeasonNumberHelper.TryResolveChainSeasonNumberAsync(api, subjectId, info.SeriesProviderIds, log, cancellationToken) is { } n)
+            if (await SeasonHelper.TryResolveChainSeasonNumberAsync(api, subjectId, info.SeriesProviderIds, log, cancellationToken) is { } chainSeasonNumber)
             {
-                result.Item.IndexNumber = n;
-                log.Info("Use chain Season {seasonNumber} for {parent}", n, seasonPath);
-            }
-            else
-            {
-                log.Warn("Skip season inference for {parent}: series subject is not in chain of {SubjectId}", seasonPath, subjectId);
+                result.Item.IndexNumber = chainSeasonNumber;
+                log.Info("Use chain Season {seasonNumber} for {parent}", chainSeasonNumber, seasonPath);
             }
         }
 

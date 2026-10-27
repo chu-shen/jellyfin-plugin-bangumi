@@ -115,9 +115,6 @@ public class EpisodeProvider(BangumiApi api, Logger<EpisodeProvider> log, ILibra
         // use title and overview from special episode subject if episode data is empty
         var series = await api.GetSubject(episode.ParentId, cancellationToken);
 
-        // 特典一般没有 Bangumi 剧集数据 ⇒ episode.ParentId 是空的，只能从本地配置/系列条目上取。
-        var episodeSeriesId = series is not null ? series.Id : LocalConfigurationHelper.GetSeriesId(localConfiguration, info, libraryManager);
-
         if (series == null)
         {
             FillFallbackTitle(result.Item, info);
@@ -140,27 +137,17 @@ public class EpisodeProvider(BangumiApi api, Logger<EpisodeProvider> log, ILibra
 
 
         var airSeasonNumber = parent is Season ? parent.IndexNumber : 1;
-        if (Configuration.UseBangumiRelationChainForEpisodeSeasonNumber && await SeasonNumberHelper.TryResolveChainSeasonNumberAsync(api, episodeSeriesId, info.SeriesProviderIds, log, cancellationToken) is { } chainSeasonNumber)
+        if (Configuration.UseBangumiRelationChainForEpisodeSeasonNumber && await SeasonHelper.TryResolveChainSeasonNumberAsync(api, series.Id, info.SeriesProviderIds, log, cancellationToken) is { } chainSeasonNumber)
             airSeasonNumber = chainSeasonNumber;
-        DateTime? episodeAirDate = DateTime.TryParse(episode.AirDate, out var ead) ? ead : null;
-        DateTime? seriesAirDate = DateTime.TryParse(series.AirDate, out var sad) ? sad : null;
 
-        if (episodeAirDate is not null && seriesAirDate is not null && episodeAirDate < seriesAirDate)
-        {
-            // 1) 季前：整季之前
+        if (!string.IsNullOrEmpty(episode.AirDate) && string.Compare(episode.AirDate, series.AirDate, StringComparison.Ordinal) < 0)
             result.Item.AirsBeforeSeasonNumber = airSeasonNumber;
-        }
-        else if (episodeAirDate is not null && (series.EndDate == default || episodeAirDate <= series.EndDate))
-        {
-            // 2) 季内：E(Order-1) 之后 / E(Order) 之前
-            result.Item.AirsBeforeSeasonNumber = airSeasonNumber;
-            result.Item.AirsBeforeEpisodeNumber = (int)Math.Ceiling(episode.Order);
-        }
         else
-        {
-            // 3) 季末之后或无有效日期：整季之后
             result.Item.AirsAfterSeasonNumber = airSeasonNumber;
-        }
+
+        if (episode.Order % 1 != 0)
+            result.Item.AirsBeforeEpisodeNumber = (int)Math.Ceiling(episode.Order);
+
 
         FillFallbackTitle(result.Item, info);
 
@@ -208,7 +195,7 @@ public class EpisodeProvider(BangumiApi api, Logger<EpisodeProvider> log, ILibra
             ? episode.ParentId
             : LocalConfigurationHelper.GetSeriesId(localConfiguration, info, libraryManager);
         if (Configuration.UseBangumiRelationChainForEpisodeSeasonNumber
-            && await SeasonNumberHelper.TryResolveChainSeasonNumberAsync(api, seriesId, info.SeriesProviderIds, log, token) is { } chainSeasonNumber)
+            && await SeasonHelper.TryResolveChainSeasonNumberAsync(api, seriesId, info.SeriesProviderIds, log, token) is { } chainSeasonNumber)
             return (chainSeasonNumber, Guid.Empty);
 
         // parser result
