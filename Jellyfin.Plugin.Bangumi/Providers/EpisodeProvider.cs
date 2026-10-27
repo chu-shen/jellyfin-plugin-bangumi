@@ -135,11 +135,7 @@ public class EpisodeProvider(BangumiApi api, Logger<EpisodeProvider> log, ILibra
             }
         }
 
-
-        var airSeasonNumber = parent is Season ? parent.IndexNumber : 1;
-        if (Configuration.UseBangumiRelationChainForEpisodeSeasonNumber && await SeasonHelper.TryResolveChainSeasonNumberAsync(api, series.Id, info.SeriesProviderIds, log, cancellationToken) is { } chainSeasonNumber)
-            airSeasonNumber = chainSeasonNumber;
-
+        var (airSeasonNumber, _) = await ResolveMainlineSeasonAsync(episode, parent, info, localConfiguration, cancellationToken);
         if (!string.IsNullOrEmpty(episode.AirDate) && string.Compare(episode.AirDate, series.AirDate, StringComparison.Ordinal) < 0)
             result.Item.AirsBeforeSeasonNumber = airSeasonNumber;
         else
@@ -147,7 +143,6 @@ public class EpisodeProvider(BangumiApi api, Logger<EpisodeProvider> log, ILibra
 
         if (episode.Order % 1 != 0)
             result.Item.AirsBeforeEpisodeNumber = (int)Math.Ceiling(episode.Order);
-
 
         FillFallbackTitle(result.Item, info);
 
@@ -186,6 +181,25 @@ public class EpisodeProvider(BangumiApi api, Logger<EpisodeProvider> log, ILibra
             || BasicEpisodeParser.IsSpecial(info.Path, libraryManager, true))
             return (0, Guid.Empty);
 
+        return await ResolveMainlineSeasonAsync(episode, parent, info, localConfiguration, token);
+
+        (int, Guid) GetNormalSeasonNumber()
+        {
+            if (parent is Season { IndexNumber: > 0 } season)
+                return (season.IndexNumber.GetValueOrDefault(1), season.Id);
+            if (episode?.SeasonNumber > 0)
+                return (Math.Max(1, (int)episode.SeasonNumber.Value), Guid.Empty);
+            return (info.ParentIndexNumber > 0 ? info.ParentIndexNumber.Value : 1, Guid.Empty);
+        }
+    }
+
+    private async Task<(int? seasonNumber, Guid seasonId)> ResolveMainlineSeasonAsync(
+    Model.Episode? episode,
+    BaseItem? parent,
+    EpisodeInfo info,
+    LocalConfiguration localConfiguration,
+    CancellationToken token)
+    {
         // parent is Season
         if (parent is Season { IndexNumber: not null } season)
             return (season.IndexNumber!.Value, season.Id);
@@ -199,24 +213,15 @@ public class EpisodeProvider(BangumiApi api, Logger<EpisodeProvider> log, ILibra
             return (chainSeasonNumber, Guid.Empty);
 
         // parser result
-        if (episode?.SeasonNumber is not null)
+        if (episode?.SeasonNumber > 0)
             return ((int)episode.SeasonNumber.Value, Guid.Empty);
 
         // season default: null
         if (parent is Season)
-            return (info.ParentIndexNumber is > 0 ? info.ParentIndexNumber.Value : (int?)null, parent.Id);
+            return (info.ParentIndexNumber is > 0 ? info.ParentIndexNumber.Value : null, parent.Id);
 
         // normal
         return (parent is Series ? 1 : (info.ParentIndexNumber is > 0 ? info.ParentIndexNumber.Value : 1), Guid.Empty);
-
-        (int, Guid) GetNormalSeasonNumber()
-        {
-            if (parent is Season { IndexNumber: > 0 } season)
-                return (season.IndexNumber.GetValueOrDefault(1), season.Id);
-            if (episode?.SeasonNumber > 0)
-                return (Math.Max(1, (int)episode.SeasonNumber.Value), Guid.Empty);
-            return (info.ParentIndexNumber > 0 ? info.ParentIndexNumber.Value : 1, Guid.Empty);
-        }
     }
 
     public Task<IEnumerable<RemoteSearchResult>> GetSearchResults(EpisodeInfo searchInfo, CancellationToken cancellationToken)
