@@ -156,6 +156,28 @@ public class EpisodeProvider(BangumiApi api, Logger<EpisodeProvider> log, ILibra
         if (string.IsNullOrEmpty(item.OriginalTitle))
             item.OriginalTitle = Path.GetFileNameWithoutExtension(info.Path);
     }
+
+    // 向上找最近的季：特典目录里可能再套一层普通文件夹（例如 "Season 0/Bonus"），此时直接父级不是 Season
+    private Season? FindSeasonParent(BaseItem? parent)
+    {
+        for (var item = parent; item is not null;)
+        {
+            if (item is Season season)
+                return season;
+
+            if (string.IsNullOrEmpty(item.Path))
+                return null;
+
+            var parentPath = Path.GetDirectoryName(item.Path);
+            if (string.IsNullOrEmpty(parentPath) || parentPath == item.Path)
+                return null;
+
+            item = libraryManager.FindByPath(parentPath, true);
+        }
+
+        return null;
+    }
+
     private async Task<(int? seasonNumber, Guid seasonId)> ResolveSeasonNumberAsync(
     Model.Episode? episode,
     BaseItem? parent,
@@ -181,15 +203,15 @@ public class EpisodeProvider(BangumiApi api, Logger<EpisodeProvider> log, ILibra
             || BasicEpisodeParser.IsSpecial(info.Path, libraryManager, true))
             return (0, Guid.Empty);
 
-        // 物理 Season 0
-        if (parent is Season { IndexNumber: 0 } season)
+        // 物理 Season 0（包括特典目录里再套一层文件夹的情况）
+        if (FindSeasonParent(parent) is { IndexNumber: 0 } season)
             return (0, season.Id);
 
         return await ResolveMainlineSeasonAsync(episode, parent, info, localConfiguration, token);
 
         (int, Guid) GetNormalSeasonNumber()
         {
-            if (parent is Season { IndexNumber: > 0 } season)
+            if (FindSeasonParent(parent) is { IndexNumber: > 0 } season)
                 return (season.IndexNumber.GetValueOrDefault(1), season.Id);
             if (episode?.SeasonNumber > 0)
                 return (Math.Max(1, (int)episode.SeasonNumber.Value), Guid.Empty);
@@ -204,9 +226,10 @@ public class EpisodeProvider(BangumiApi api, Logger<EpisodeProvider> log, ILibra
     LocalConfiguration localConfiguration,
     CancellationToken token)
     {
-        // parent is Season
-        if (parent is Season { IndexNumber: > 0 } season)
-            return (season.IndexNumber!.Value, season.Id);
+        // 最近的季（季目录里可能还套着普通文件夹）
+        var season = FindSeasonParent(parent);
+        if (season is { IndexNumber: > 0 } numberedSeason)
+            return (numberedSeason.IndexNumber!.Value, numberedSeason.Id);
 
         // relation chain
         var seriesId = episode is { ParentId: > 0 }
@@ -221,8 +244,8 @@ public class EpisodeProvider(BangumiApi api, Logger<EpisodeProvider> log, ILibra
             return ((int)episode.SeasonNumber.Value, Guid.Empty);
 
         // season default: null
-        if (parent is Season)
-            return (info.ParentIndexNumber is > 0 ? info.ParentIndexNumber.Value : null, parent.Id);
+        if (season is not null)
+            return (info.ParentIndexNumber is > 0 ? info.ParentIndexNumber.Value : null, season.Id);
 
         // normal
         return (parent is Series ? 1 : (info.ParentIndexNumber is > 0 ? info.ParentIndexNumber.Value : 1), Guid.Empty);
