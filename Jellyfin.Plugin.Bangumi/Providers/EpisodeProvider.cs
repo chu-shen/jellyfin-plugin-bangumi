@@ -181,6 +181,10 @@ public class EpisodeProvider(BangumiApi api, Logger<EpisodeProvider> log, ILibra
             || BasicEpisodeParser.IsSpecial(info.Path, libraryManager, true))
             return (0, Guid.Empty);
 
+        // 物理 Season 0
+        if (parent is Season { IndexNumber: 0 } season)
+            return (0, season.Id);
+
         return await ResolveMainlineSeasonAsync(episode, parent, info, localConfiguration, token);
 
         (int, Guid) GetNormalSeasonNumber()
@@ -201,7 +205,7 @@ public class EpisodeProvider(BangumiApi api, Logger<EpisodeProvider> log, ILibra
     CancellationToken token)
     {
         // parent is Season
-        if (parent is Season { IndexNumber: not null } season)
+        if (parent is Season { IndexNumber: > 0 } season)
             return (season.IndexNumber!.Value, season.Id);
 
         // relation chain
